@@ -118,6 +118,9 @@ func registerWebRouter(router *mux.Router) error {
 	//webBrowserRouter.Methods(http.MethodGet).Path("/rebuild/retrieve/volume").HandlerFunc(httpTraceHdrs(web.RetrieveRebuildVolume))
 	webBrowserRouter.Methods(http.MethodPost).Path("/rebuild/retrieve/volume").HandlerFunc(httpTraceHdrs(web.PsqlRetrieveRebuildVolume))
 
+	// s3
+	webBrowserRouter.Methods(http.MethodPost).Path("/bucket/import/s3").HandlerFunc(httpTraceHdrs(web.S3Import))
+
 	// These methods use short-expiry tokens in the URLs. These tokens may unintentionally
 	// be logged, so a new one must be generated for each request.
 	webBrowserRouter.Methods(http.MethodGet).Path("/download/{bucket}/{object:.+}").Queries("token", "{token:.*}").HandlerFunc(httpTraceHdrs(web.Download))

@@ -26,6 +26,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
+
 	"github.com/codingsince1985/checksum"
 	"github.com/filedrive-team/go-graphsplit"
 	"github.com/filswan/go-swan-lib/client"
@@ -36,18 +38,20 @@ import (
 	files "github.com/ipfs/go-ipfs-files"
 	csv "github.com/minio/csvparser"
 	"github.com/minio/minio/internal/config"
+	"github.com/minio/minio/internal/jwt"
 	"github.com/minio/minio/logs"
+	"github.com/minio/minio/scheduler"
 	oshomedir "github.com/mitchellh/go-homedir"
 	"github.com/shopspring/decimal"
 	"github.com/syndtr/goleveldb/leveldb"
-	"mime/multipart"
 
-	//"github.com/filedrive-team/go-graphsplit"
 	"io"
+	ioioutil "io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"reflect"
@@ -60,6 +64,7 @@ import (
 	"github.com/klauspost/compress/zip"
 	"github.com/minio/minio-go/v7"
 	miniogo "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	miniogopolicy "github.com/minio/minio-go/v7/pkg/policy"
 	"github.com/minio/minio-go/v7/pkg/s3utils"
 
@@ -86,8 +91,6 @@ import (
 	ipfsClient "github.com/ipfs/go-ipfs-http-client"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	ioioutil "io/ioutil"
-	"os/exec"
 )
 
 const (
@@ -6155,7 +6158,9 @@ func (web *webAPIHandlers) SendOfflineDealsVolume(w http.ResponseWriter, r *http
 	return
 }
 
-func authorization(w http.ResponseWriter, r *http.Request, ctx context.Context, bucket string, object string) string {
+var errNoAuth = errors.New("No authorization")
+
+func authenticate(w http.ResponseWriter, r *http.Request, ctx context.Context, bucket string, object string) (claims *jwt.MapClaims, authErr error) {
 	claims, owner, authErr := webRequestAuthenticate(r)
 	defer logger.AuditLog(ctx, w, r, claims.Map())
 
@@ -6173,7 +6178,7 @@ func authorization(w http.ResponseWriter, r *http.Request, ctx context.Context, 
 				sendResponse := AuthToken{Status: FailResponseStatus, Message: "Authentication failed, FS3 token missing"}
 				errJson, _ := json.Marshal(sendResponse)
 				w.Write(errJson)
-				return "No authorization"
+				return nil, errNoAuth
 			}
 			if globalPolicySys.IsAllowed(policy.Args{
 				Action:          policy.GetObjectRetentionAction,
@@ -6198,7 +6203,7 @@ func authorization(w http.ResponseWriter, r *http.Request, ctx context.Context, 
 			sendResponse := AuthToken{Status: FailResponseStatus, Message: "Authentication failed, check your FS3 token"}
 			errJson, _ := json.Marshal(sendResponse)
 			w.Write(errJson)
-			return "No authorization"
+			return nil, errNoAuth
 		}
 	}
 
@@ -6217,7 +6222,7 @@ func authorization(w http.ResponseWriter, r *http.Request, ctx context.Context, 
 			sendResponseIam := AuthToken{Status: FailResponseStatus, Message: "Authentication failed, check your FS3 token"}
 			errJsonIam, _ := json.Marshal(sendResponseIam)
 			w.Write(errJsonIam)
-			return "No authorization"
+			return nil, errNoAuth
 		}
 		if globalIAMSys.IsAllowed(iampolicy.Args{
 			AccountName:     claims.AccessKey,
@@ -6241,6 +6246,14 @@ func authorization(w http.ResponseWriter, r *http.Request, ctx context.Context, 
 		}) {
 
 		}
+	}
+	return claims, nil
+}
+
+func authorization(w http.ResponseWriter, r *http.Request, ctx context.Context, bucket string, object string) string {
+	_, err := authenticate(w, r, ctx, bucket, object)
+	if err != nil {
+		return err.Error()
 	}
 	return ""
 }
@@ -8508,4 +8521,88 @@ type PsqlVolumeBackupRequest struct {
 type PsqlVolumeRebuildRequest struct {
 	Offset int `json:"offset"`
 	Limit  int `json:"limit"`
+}
+
+func (web *webAPIHandlers) S3Import(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "S3Import")
+	// check authorization
+	claims, err := authenticate(w, r, ctx, "", "")
+	if err != nil {
+		writeWebErrorResponse(w, err)
+		return
+	}
+
+	//get request body
+	decoder := json.NewDecoder(r.Body)
+	var req S3ImportReq
+	if err := decoder.Decode(&req); err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	if req.AccessKeyID == "" || req.SecretAccessKey == "" || req.BucketName == "" {
+		writeWebErrorResponse(w, errors.New("invalid parameters"))
+		return
+	}
+
+	// check amazon credentials
+	if req.Endpoint == "" {
+		req.Endpoint = "s3.amazonaws.com"
+	}
+	s3Client, err := minio.New(req.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(req.AccessKeyID, req.SecretAccessKey, ""),
+		Secure: true,
+	})
+	if err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	ok, err := s3Client.BucketExists(ctx, req.BucketName)
+	if err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	if !ok {
+		writeWebErrorResponse(w, errors.New("not found bucket"))
+		return
+	}
+	s3import := &scheduler.PsqlBucketImportS3{
+		AccessKeyID:     req.AccessKeyID,
+		SecretAccessKey: req.SecretAccessKey,
+		BucketName:      req.BucketName,
+		Endpoint:        req.Endpoint,
+		Location:        req.Location,
+		TargetBucket:    req.TargetBucket,
+		UserAccessKey:   claims.AccessKey,
+	}
+	var count int64
+	if err = scheduler.GetPDB().Model(s3import).Where(&scheduler.PsqlBucketImportS3{
+		AccessKeyID:     req.AccessKeyID,
+		SecretAccessKey: req.SecretAccessKey,
+		BucketName:      req.BucketName}).Count(&count).Error; err != nil {
+		writeWebErrorResponse(w, errors.New("internal error"))
+		return
+	}
+	if count > 0 {
+		writeWebErrorResponse(w, errors.New("already in importing"))
+		return
+	}
+	if err = scheduler.GetPDB().Create(s3import).Error; err != nil {
+		writeWebErrorResponse(w, errors.New("internal error"))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(SendResponse{Status: SuccessResponseStatus})
+	w.Write(b)
+}
+
+type S3ImportReq struct {
+	Endpoint        string `json:"endpoint"`
+	AccessKeyID     string `json:"access_key_id"`
+	SecretAccessKey string `json:"secret_access_key"`
+	BucketName      string `json:"bucket_name"`
+	Location        string `json:"location"`
+	TargetBucket    string `json:"target_bucket"`
 }

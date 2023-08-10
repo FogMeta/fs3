@@ -18,6 +18,10 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+	"sort"
+
 	"github.com/joho/godotenv"
 	"github.com/minio/cli"
 	sysconfig "github.com/minio/minio/config"
@@ -27,9 +31,6 @@ import (
 	"github.com/minio/pkg/console"
 	"github.com/minio/pkg/trie"
 	"github.com/minio/pkg/words"
-	"os"
-	"path/filepath"
-	"sort"
 )
 
 // GlobalFlags - global flags for minio.
@@ -170,6 +171,7 @@ func Main(args []string) {
 
 	initConfigAndLog()
 	initUserConfig(sysconfig.GetSysConfig().StandAlone)
+	scheduler.Init()
 	scheduler.SendDealScheduler()
 	scheduler.BackupScheduler()
 	scheduler.RebuildScheduler()
