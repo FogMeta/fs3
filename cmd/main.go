@@ -175,6 +175,7 @@ func Main(args []string) {
 	scheduler.SendDealScheduler()
 	scheduler.BackupScheduler()
 	scheduler.RebuildScheduler()
+	scheduler.ImportS3Scheduler()
 
 	logs.GetLogger().Info("Your FS3 Server is running successfully. Please copy and paste the url below to open in a browser")
 

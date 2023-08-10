@@ -681,14 +681,14 @@ func (web *webAPIHandlers) ListObjects(r *http.Request, args *ListObjectsArgs, r
 
 // RemoveObjectArgs - args to remove an object, JSON will look like.
 //
-// {
-//     "bucketname": "testbucket",
-//     "objects": [
-//         "photos/hawaii/",
-//         "photos/maldives/",
-//         "photos/sanjose.jpg"
-//     ]
-// }
+//	{
+//	    "bucketname": "testbucket",
+//	    "objects": [
+//	        "photos/hawaii/",
+//	        "photos/maldives/",
+//	        "photos/sanjose.jpg"
+//	    ]
+//	}
 type RemoveObjectArgs struct {
 	Objects    []string `json:"objects"`    // Contains objects, prefixes.
 	BucketName string   `json:"bucketname"` // Contains bucket name.
@@ -8540,8 +8540,8 @@ func (web *webAPIHandlers) S3Import(w http.ResponseWriter, r *http.Request) {
 		writeWebErrorResponse(w, err)
 		return
 	}
-	if req.AccessKeyID == "" || req.SecretAccessKey == "" || req.BucketName == "" {
-		writeWebErrorResponse(w, errors.New("invalid parameters"))
+	if req.BucketName == "" {
+		writeWebErrorResponse(w, errors.New("invalid empty bucket"))
 		return
 	}
 
@@ -8549,10 +8549,19 @@ func (web *webAPIHandlers) S3Import(w http.ResponseWriter, r *http.Request) {
 	if req.Endpoint == "" {
 		req.Endpoint = "s3.amazonaws.com"
 	}
-	s3Client, err := minio.New(req.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(req.AccessKeyID, req.SecretAccessKey, ""),
+	options := &minio.Options{
 		Secure: true,
-	})
+	}
+	if req.AccessKeyID != "" && req.SecretAccessKey != "" {
+		options.Creds = credentials.NewStaticV4(req.AccessKeyID, req.SecretAccessKey, "")
+	} else if req.AccessKeyID == "" && req.SecretAccessKey == "" {
+		logs.GetLogger().Warn("import public bucket")
+	} else {
+		writeWebErrorResponse(w, errors.New("invalid parameters"))
+		return
+	}
+
+	s3Client, err := minio.New(req.Endpoint, options)
 	if err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
