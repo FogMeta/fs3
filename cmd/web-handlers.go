@@ -1530,6 +1530,30 @@ func (web *webAPIHandlers) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Query().Get("format") == "zip" {
+		var prefix, obj string
+		if !HasSuffix(object, SlashSeparator) {
+			obj = filepath.Base(object)
+			prefix = filepath.Dir(object)
+		} else {
+			obj = filepath.Base(object) + SlashSeparator
+			prefix = filepath.Dir(strings.TrimRight(object, slashSeparator))
+		}
+		if prefix == "." {
+			prefix = ""
+		}
+		logs.GetLogger().Infof("prefix: %s, obj: %s\n", prefix, obj)
+		args := DownloadZipArgs{
+			Objects:    []string{obj},
+			Prefix:     prefix,
+			BucketName: bucket,
+		}
+		b, _ := json.Marshal(args)
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		web.DownloadZip(w, r)
+		return
+	}
+
 	getObjectNInfo := objectAPI.GetObjectNInfo
 	if web.CacheAPI() != nil {
 		getObjectNInfo = web.CacheAPI().GetObjectNInfo
