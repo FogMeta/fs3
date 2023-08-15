@@ -82,6 +82,7 @@ import (
 	"github.com/minio/minio/internal/ioutil"
 	"github.com/minio/minio/internal/logger"
 	"github.com/minio/pkg/bucket/policy"
+	"github.com/minio/pkg/env"
 	iampolicy "github.com/minio/pkg/iam/policy"
 	"github.com/minio/rpc/json2"
 
@@ -8638,4 +8639,222 @@ type S3ImportReq struct {
 	BucketName      string `json:"bucket_name"`
 	Location        string `json:"location"`
 	TargetBucket    string `json:"target_bucket"`
+}
+
+// Backup makes backups for objects
+func (web *webAPIHandlers) Backup(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "Backup")
+
+	claims, owner, authErr := webRequestAuthenticate(r)
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	objectAPI := web.ObjectAPI()
+	if objectAPI == nil {
+		writeWebErrorResponse(w, errServerNotInitialized)
+		return
+	}
+
+	vars := mux.Vars(r)
+
+	bucket := vars["bucket"]
+	object, err := unescapePath(vars["object"])
+	if err != nil {
+		writeWebErrorResponse(w, err)
+		logs.GetLogger().Error(err)
+		return
+	}
+
+	if authErr != nil {
+		if authErr == errNoAuthToken {
+			// Check if anonymous (non-owner) has access to download objects.
+			if !globalPolicySys.IsAllowed(policy.Args{
+				Action:          policy.GetObjectAction,
+				BucketName:      bucket,
+				ConditionValues: getConditionValues(r, "", "", nil),
+				IsOwner:         false,
+				ObjectName:      object,
+			}) {
+				w.WriteHeader(http.StatusUnauthorized)
+				sendResponse := AuthToken{Status: FailResponseStatus, Message: "Authentication failed, FS3 token missing"}
+				errJson, _ := json.Marshal(sendResponse)
+				w.Write(errJson)
+				return
+			}
+			if globalPolicySys.IsAllowed(policy.Args{
+				Action:          policy.GetObjectRetentionAction,
+				BucketName:      bucket,
+				ConditionValues: getConditionValues(r, "", "", nil),
+				IsOwner:         false,
+				ObjectName:      object,
+			}) {
+
+			}
+			if globalPolicySys.IsAllowed(policy.Args{
+				Action:          policy.GetObjectLegalHoldAction,
+				BucketName:      bucket,
+				ConditionValues: getConditionValues(r, "", "", nil),
+				IsOwner:         false,
+				ObjectName:      object,
+			}) {
+
+			}
+		} else {
+			w.WriteHeader(http.StatusUnauthorized)
+			sendResponse := AuthToken{Status: FailResponseStatus, Message: "Authentication failed, check your FS3 token"}
+			errJson, _ := json.Marshal(sendResponse)
+			w.Write(errJson)
+			return
+		}
+	}
+
+	// For authenticated users apply IAM policy.
+	if authErr == nil {
+		if !globalIAMSys.IsAllowed(iampolicy.Args{
+			AccountName:     claims.AccessKey,
+			Action:          iampolicy.GetObjectAction,
+			BucketName:      bucket,
+			ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
+			IsOwner:         owner,
+			ObjectName:      object,
+			Claims:          claims.Map(),
+		}) {
+			w.WriteHeader(http.StatusUnauthorized)
+			sendResponseIam := AuthToken{Status: FailResponseStatus, Message: "Authentication failed, check your FS3 token"}
+			errJsonIam, _ := json.Marshal(sendResponseIam)
+			w.Write(errJsonIam)
+			return
+		}
+		if globalIAMSys.IsAllowed(iampolicy.Args{
+			AccountName:     claims.AccessKey,
+			Action:          iampolicy.GetObjectRetentionAction,
+			BucketName:      bucket,
+			ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
+			IsOwner:         owner,
+			ObjectName:      object,
+			Claims:          claims.Map(),
+		}) {
+
+		}
+		if globalIAMSys.IsAllowed(iampolicy.Args{
+			AccountName:     claims.AccessKey,
+			Action:          iampolicy.GetObjectLegalHoldAction,
+			BucketName:      bucket,
+			ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
+			IsOwner:         owner,
+			ObjectName:      object,
+			Claims:          claims.Map(),
+		}) {
+
+		}
+	}
+
+	// Check if bucket is a reserved bucket name or invalid.
+	if isReservedOrInvalidBucket(bucket, false) {
+		writeWebErrorResponse(w, errInvalidBucketName)
+		return
+	}
+
+	getObjectNInfo := objectAPI.GetObjectNInfo
+	if web.CacheAPI() != nil {
+		getObjectNInfo = web.CacheAPI().GetObjectNInfo
+	}
+	var opts ObjectOptions
+	gr, err := getObjectNInfo(ctx, bucket, object, nil, r.Header, readLock, opts)
+	if err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	defer gr.Close()
+
+	if err != nil && err != io.EOF {
+		w.Write([]byte(fmt.Sprintf("bad request: %s", err.Error())))
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	var onlineDealRequest OnlineDealRequest
+	err = decoder.Decode(&onlineDealRequest)
+	if err != nil && err != io.EOF {
+		w.Write([]byte(fmt.Sprintf("bad request: %s", err.Error())))
+		return
+	}
+
+	_ = func(address string) (string, error) {
+		addr := net.ParseIP(address)
+		if addr != nil {
+			// Host is an ip address
+			err := errors.New("for dev env, please provide a header with valid Host, exp: a5a84b78-dd4a-45f4-bd90-31428fc23a21.cygnus.nbai.io")
+			return "", err
+		} else {
+			// Host is a host name
+			domainSegments := strings.Split(address, ".")
+			if len(domainSegments) > 1 {
+				return domainSegments[0], nil
+			} else {
+				err := errors.New(fmt.Sprintf("invalid Host in header %s", address))
+				return "", err
+			}
+		}
+	}
+
+	err = backup(claims.AccessKey, bucket, object)
+	if err != nil {
+		writeWebErrorResponse(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(SendResponse{Status: SuccessResponseStatus})
+	w.Write(b)
+}
+
+const defaultJWTExpiryForDownload = 24 * time.Hour * 7
+
+func backup(accessKey, bucket, object string) (err error) {
+	filWallet := config.GetUserConfig().Fs3WalletAddress
+	if filWallet == "" {
+		return errors.New("Please provide a wallet address for sending deals")
+	}
+	fs3VolumeAddress := config.GetUserConfig().Fs3VolumeAddress
+	sourceFilePath := filepath.Join(fs3VolumeAddress, bucket, object)
+	client := scheduler.NewMetaClient(env.Get("SWAN_KEY", ""), env.Get("SWAN_TOKEN", ""), env.Get("META_SERVER", ""))
+	fi, err := os.Stat(sourceFilePath)
+	if err != nil {
+		return
+	}
+	creds := globalActiveCred
+	token, err := authenticateJWTUsers(creds.AccessKey, creds.SecretKey, defaultJWTExpiryForDownload)
+	if err != nil {
+		logs.GetLogger().Error("authenticateURL error:", err)
+		return
+	}
+
+	downloadURL, _ := url.JoinPath(env.Get("HOST_NAME", ""), minioReservedBucket, "download", bucket, object)
+	values := url.Values{}
+	values.Set("token", token)
+	if fi.IsDir() {
+		values.Set("format", "zip")
+	}
+	downloadURL += "?" + values.Encode()
+	id, err := client.Backup(bucket+"-"+fi.Name(), filWallet, &scheduler.FileData{
+		SourceName:  fi.Name(),
+		DataSize:    fi.Size(),
+		IsDirectory: fi.IsDir(),
+		DownloadURL: downloadURL,
+	})
+	if err != nil {
+		logs.GetLogger().Error("backup error:", err)
+		return
+	}
+	// save data
+	return scheduler.GetPDB().Create(&scheduler.PsqlBucketObjectBackup{
+		UserAccessKey: accessKey,
+		BucketName:    bucket,
+		ObjectName:    object,
+		IsDir:         fi.IsDir(),
+		Size:          fi.Size(),
+		DownloadURL:   downloadURL,
+		Filepath:      sourceFilePath,
+		MsID:          id,
+	}).Error
 }

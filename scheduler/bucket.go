@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -132,6 +133,7 @@ func ImportFromS3Bucket(restartPtr *bool) (err error) {
 		objs = append(objs, &obj)
 		manager.Send(&obj)
 	}
+	manager.WaitDone(totalCnt)
 
 	for _, obj := range objs {
 		if obj.Err == nil {
@@ -190,6 +192,7 @@ type syncManager struct {
 	ch           chan *minio.ObjectInfo
 	exit         chan bool
 	once         sync.Once
+	cnt          atomic.Int32
 }
 
 func NewSyncManager(limit int, sourceClient, targetClient *minio.Client, sourceBucket, targetBucket string) *syncManager {
@@ -227,6 +230,14 @@ func (sm *syncManager) Interrupt() {
 	sm.exit <- true
 }
 
+func (sm *syncManager) WaitDone(total int) {
+	for {
+		if sm.cnt.Load() == int32(total) {
+			return
+		}
+	}
+}
+
 func (sm *syncManager) doSync(ctx context.Context) {
 	for {
 		select {
@@ -258,4 +269,169 @@ func (sm *syncManager) doSync(ctx context.Context) {
 			return
 		}
 	}
+}
+
+type PsqlBucketObjectBackup struct {
+	gorm.Model
+	UserAccessKey string
+	BucketName    string
+	ObjectName    string
+	IsDir         bool
+	Size          int64
+	VersionID     string `gorm:"column:version_id"`
+	DownloadURL   string `gorm:"column:download_url"`
+	Filepath      string
+	PayloadCID    string `gorm:"column:payload_cid"`
+	PayloadURL    string `gorm:"column:payload_url"`
+	MsID          int64  `gorm:"column:ms_id"`
+	Status        int
+	StatusMsg     string
+}
+
+type PsqlBucketObjectBackupSlice struct {
+	ID         uint `gorm:"primarykey"`
+	BackupID   uint `gorm:"column:backup_id"`
+	FileName   string
+	Size       int64
+	PayloadCID string `gorm:"column:payload_cid"`
+	PayloadURL string `gorm:"column:payload_url"`
+	Status     int
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+type PsqlBucketObjectBackupSliceDeal struct {
+	ID         uint   `gorm:"primarykey"`
+	BackUpID   uint   `gorm:"column:backup_id"`
+	PayloadCID string `gorm:"column:payload_cid"`
+	MinerID    string `gorm:"column:miner_id"`
+	DealID     int    `gorm:"column:deal_id"`
+	DealCID    string `gorm:"column:deal_cid"`
+	Cost       string
+	Status     int
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+func BackupSyncScheduler() {
+	c := cron.New()
+	interval := "@every 1m"
+	err := c.AddFunc(interval, func() {
+		logs.GetLogger().Println("---------- backup sync scheduler is running at " + time.Now().Format("2006-01-02 15:04:05") + " ----------")
+		if err := BackupSync(); err != nil {
+			logs.GetLogger().Error(err)
+			return
+		}
+	})
+	if err != nil {
+		logs.GetLogger().Error(err)
+		return
+	}
+
+	c.Start()
+}
+
+func BackupSync() error {
+	limit := 10
+	statusDealActive := 45
+	var id uint
+	db := pdb.Model(PsqlBucketObjectBackup{}).Where("status < ?", statusDealActive)
+	for {
+		var backups []*PsqlBucketObjectBackup
+		if id > 0 {
+			db = pdb.Model(PsqlBucketObjectBackup{}).Where("id < ?", id).Where("status < ?", statusDealActive)
+		}
+		if err := db.Order("id desc").Limit(limit).Find(&backups).Error; err != nil {
+			return err
+		}
+		for _, backup := range backups {
+			if err := syncBackupInfo(backup); err != nil {
+				logs.GetLogger().Error(err)
+			}
+			id = backup.ID
+		}
+		if len(backups) < limit {
+			return nil
+		}
+	}
+}
+
+func syncBackupInfo(backup *PsqlBucketObjectBackup) error {
+	if backup.MsID == 0 {
+		return nil
+	}
+	client := NewMetaClient(env.Get("SWAN_KEY", ""), env.Get("SWAN_TOKEN", ""), env.Get("META_SERVER", ""))
+	resp, err := client.BackupDealStatus(backup.MsID)
+	if err != nil {
+		return err
+	}
+
+	backup.Status = resp.Status
+	if err = pdb.Model(backup).Updates(&PsqlBucketObjectBackup{
+		PayloadCID: resp.PayloadCID,
+		PayloadURL: resp.PayloadURL,
+		Status:     resp.Status,
+		StatusMsg:  resp.DatasetStatus,
+	}).Error; err != nil {
+		logs.GetLogger().Error(err)
+		return err
+	}
+	for _, fd := range resp.FileDescList {
+		if err := syncBackupDetail(backup.ID, fd); err != nil {
+			logs.GetLogger().Error(err)
+		}
+	}
+	return nil
+}
+
+func syncBackupDetail(id uint, fd *FileDesc) error {
+	bs := &PsqlBucketObjectBackupSlice{
+		BackupID:   id,
+		PayloadCID: fd.PayloadCid,
+	}
+
+	if err := pdb.Where(bs).First(bs).Error; err != nil {
+		// insert
+		bs.FileName = fd.CarFileName
+		bs.PayloadURL = fd.CarFileUrl
+		bs.Size = fd.SourceFileSize
+		if err = pdb.Create(bs).Error; err != nil {
+			return err
+		}
+	}
+	// update
+	if bs.PayloadURL != fd.CarFileUrl {
+		if err := pdb.Model(bs).Updates(&PsqlBucketObjectBackupSlice{PayloadURL: fd.CarFileUrl}).Error; err != nil {
+			return err
+		}
+	}
+
+	// deals
+	for _, deal := range fd.Deals {
+		// query deal
+		bsd := &PsqlBucketObjectBackupSliceDeal{
+			BackUpID: bs.ID,
+			MinerID:  deal.MinerFid,
+		}
+		if err := pdb.Where(bsd).First(bsd).Error; err != nil {
+			bsd.PayloadCID = fd.PayloadCid
+			bsd.DealID = deal.DealId
+			bsd.DealCID = deal.DealCid
+			bsd.Cost = deal.Cost
+			if err = pdb.Create(bsd).Error; err != nil {
+				logs.GetLogger().Error(err)
+			}
+		}
+
+		// update
+		if bsd.DealID != deal.DealId || bsd.DealCID != deal.DealCid {
+			if err := pdb.Model(bsd).Updates(PsqlBucketObjectBackupSliceDeal{
+				DealID:  deal.DealId,
+				DealCID: deal.DealCid,
+			}).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
