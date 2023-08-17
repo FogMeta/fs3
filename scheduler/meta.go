@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 
 	"github.com/minio/minio/logs"
@@ -30,56 +31,47 @@ func (m *metaClient) Backup(name string, wallet string, data ...*FileData) (id i
 	if len(data) == 0 {
 		return 0, errors.New("data is required")
 	}
-	b, err := json2.EncodeClientRequest("meta.Backup", []interface{}{name, data, wallet})
-	if err != nil {
-		return
-	}
-	response, err := m.doPostReq("application/json;charset=utf-8", bytes.NewReader(b))
-	if err != nil {
-		logs.GetLogger().Error(err)
-		return
-	}
-	defer response.Body.Close()
-	var res struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Data    int64  `json:"data"`
-	}
-	if err = json2.DecodeClientResponse(response.Body, &res); err != nil {
-		return
-	}
-	if res.Code != "success" {
-		return 0, errors.New(res.Message)
-	}
-	return res.Data, nil
+	err = m.postReq("meta.Backup", []interface{}{name, data, wallet}, &id)
+	return
 }
 
 func (m *metaClient) BackupDealStatus(id int64) (deal *DatasetDeal, err error) {
 	if id <= 0 {
 		return nil, errors.New("invalid id")
 	}
-	b, err := json2.EncodeClientRequest("meta.DatasetDeal", []interface{}{id})
+	deal = &DatasetDeal{}
+	err = m.postReq("meta.DatasetDeal", []interface{}{id}, deal)
+	return
+}
+
+func (m *metaClient) postReq(method string, args interface{}, dest interface{}) (err error) {
+	if reflect.ValueOf(dest).Kind() != reflect.Ptr {
+		return errors.New("dest is not a pointer")
+	}
+	if dest == nil {
+		return errors.New("dest not be nil")
+	}
+	b, err := json2.EncodeClientRequest(method, args)
 	if err != nil {
 		return
 	}
+
 	response, err := m.doPostReq("application/json;charset=utf-8", bytes.NewReader(b))
 	if err != nil {
 		logs.GetLogger().Error(err)
 		return
 	}
-	defer response.Body.Close()
-	var res struct {
-		Code    string       `json:"code"`
-		Message string       `json:"message"`
-		Data    *DatasetDeal `json:"data,omitempty"`
+
+	res := commonResp{
+		Data: dest,
 	}
 	if err = json2.DecodeClientResponse(response.Body, &res); err != nil {
 		return
 	}
 	if res.Code != "success" {
-		return nil, errors.New(res.Message)
+		return errors.New(res.Message)
 	}
-	return res.Data, nil
+	return
 }
 
 func (m *metaClient) doPostReq(contentType string, body io.Reader) (resp *http.Response, err error) {
@@ -97,6 +89,12 @@ func (m *metaClient) doPostReq(contentType string, body io.Reader) (resp *http.R
 	req.Header.Set("api-key", m.key)
 	req.Header.Set("api-token", m.token)
 	return client.Do(req)
+}
+
+type commonResp struct {
+	Code    string      `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
 }
 
 type FileData struct {
