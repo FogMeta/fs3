@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -38,7 +37,7 @@ func ImportS3Scheduler() {
 		logs.GetLogger().Error(err)
 		return
 	}
-
+	go ImportFromS3Bucket(nil)
 	c.Start()
 }
 
@@ -71,7 +70,7 @@ func ImportFromS3Bucket(restartPtr *bool) (err error) {
 		logs.GetLogger().Error(err)
 		return
 	}
-	tc, err := minio.New("127.0.0.1:9000", &minio.Options{
+	tc, err := minio.New(env.Get("SERVER_ENDPOINT", "127.0.0.1:9000"), &minio.Options{
 		Creds: credentials.NewStaticV4(env.Get(config.EnvRootUser, ""), env.Get(config.EnvRootPassword, ""), ""),
 	})
 	if err != nil {
@@ -92,6 +91,7 @@ func ImportFromS3Bucket(restartPtr *bool) (err error) {
 	mObjs := make(map[string]minio.ObjectInfo)
 	for info := range tc.ListObjects(ctx, s3.TargetBucket, minio.ListObjectsOptions{
 		Recursive: true,
+		// WithVersions: true,
 	}) {
 		mObjs[info.Key] = info
 	}
@@ -99,15 +99,17 @@ func ImportFromS3Bucket(restartPtr *bool) (err error) {
 	// query download bucket objects
 	objects := sc.ListObjects(ctx, s3.BucketName, minio.ListObjectsOptions{
 		Recursive: true,
+		// WithVersions: true,
 	})
 
-	var totalCnt, sucCnt int
 	if s3.Status != statusS3Importing {
 		if err = pdb.Model(s3).Updates(PsqlBucketImportS3{Status: statusS3Importing}).Error; err != nil {
 			return
 		}
 	}
-	*restartPtr = false
+	if restartPtr != nil {
+		*restartPtr = false
+	}
 
 	limit, err := env.GetInt(EnvSyncLimit, 0)
 	if err != nil {
@@ -119,13 +121,13 @@ func ImportFromS3Bucket(restartPtr *bool) (err error) {
 
 	var objs []*minio.ObjectInfo
 	for info := range objects {
-		totalCnt++
 		if info.Err != nil {
 			logs.GetLogger().Infof("%s get object error: %v", s3.BucketName, info.Err)
 			continue
 		}
 		if co, ok := mObjs[info.Key]; ok && co.Size == info.Size {
 			logs.GetLogger().Infof("%s %s already synced %s,skip", s3.BucketName, info.Key, s3.TargetBucket)
+			logs.GetLogger().Infof("%s %s pre version: %s,now version: %s", s3.BucketName, info.Key, info.VersionID, co.VersionID)
 			continue
 		}
 
@@ -133,15 +135,16 @@ func ImportFromS3Bucket(restartPtr *bool) (err error) {
 		objs = append(objs, &obj)
 		manager.Send(&obj)
 	}
-	manager.WaitDone(totalCnt)
+	manager.WaitDone()
 
+	var sucCnt int
 	for _, obj := range objs {
 		if obj.Err == nil {
 			sucCnt++
 		}
 	}
 
-	if sucCnt == totalCnt {
+	if sucCnt == len(objs) {
 		s3.Status = statusS3Imported
 	} else if sucCnt == 0 {
 		s3.Status = statusS3ImportFailed
@@ -192,7 +195,7 @@ type syncManager struct {
 	ch           chan *minio.ObjectInfo
 	exit         chan bool
 	once         sync.Once
-	cnt          atomic.Int32
+	wg           sync.WaitGroup
 }
 
 func NewSyncManager(limit int, sourceClient, targetClient *minio.Client, sourceBucket, targetBucket string) *syncManager {
@@ -211,6 +214,7 @@ func NewSyncManager(limit int, sourceClient, targetClient *minio.Client, sourceB
 }
 
 func (sm *syncManager) Send(info *minio.ObjectInfo) {
+	sm.wg.Add(1)
 	sm.ch <- info
 }
 
@@ -230,12 +234,8 @@ func (sm *syncManager) Interrupt() {
 	sm.exit <- true
 }
 
-func (sm *syncManager) WaitDone(total int) {
-	for {
-		if sm.cnt.Load() == int32(total) {
-			return
-		}
-	}
+func (sm *syncManager) WaitDone() {
+	sm.wg.Wait()
 }
 
 func (sm *syncManager) doSync(ctx context.Context) {
@@ -245,22 +245,7 @@ func (sm *syncManager) doSync(ctx context.Context) {
 			if info == nil && !ok {
 				return
 			}
-			if info == nil {
-				continue
-			}
-			obj, err := sm.sourceClient.GetObject(ctx, sm.sourceBucket, info.Key, minio.GetObjectOptions{})
-			if err != nil {
-				info.Err = err
-				logs.GetLogger().Errorf("%s %s get failed : %v", sm.sourceBucket, info.Key, err)
-				continue
-			}
-			_, err = sm.targetClient.PutObject(ctx, sm.targetBucket, info.Key, obj, info.Size, minio.PutObjectOptions{})
-			if err != nil {
-				info.Err = err
-				logs.GetLogger().Errorf("%s %s put failed : %v", sm.targetBucket, info.Key, err)
-				continue
-			}
-			logs.GetLogger().Infof("%s %s synced to %s", sm.sourceBucket, info.Key, sm.targetBucket)
+			sm.sync(ctx, info)
 		case <-ctx.Done():
 			logs.GetLogger().Error(ctx.Err())
 			return
@@ -271,8 +256,29 @@ func (sm *syncManager) doSync(ctx context.Context) {
 	}
 }
 
+func (sm *syncManager) sync(ctx context.Context, info *minio.ObjectInfo) error {
+	defer sm.wg.Done()
+	if info == nil {
+		return nil
+	}
+	obj, err := sm.sourceClient.GetObject(ctx, sm.sourceBucket, info.Key, minio.GetObjectOptions{})
+	if err != nil {
+		info.Err = err
+		logs.GetLogger().Errorf("%s %s get failed : %v", sm.sourceBucket, info.Key, err)
+		return err
+	}
+	_, err = sm.targetClient.PutObject(ctx, sm.targetBucket, info.Key, obj, info.Size, minio.PutObjectOptions{})
+	if err != nil {
+		info.Err = err
+		logs.GetLogger().Errorf("%s %s put failed : %v", sm.targetBucket, info.Key, err)
+		return err
+	}
+	logs.GetLogger().Infof("%s %s synced to %s", sm.sourceBucket, info.Key, sm.targetBucket)
+	return nil
+}
+
 type PsqlBucketObjectBackup struct {
-	gorm.Model
+	ID            uint `gorm:"primarykey"`
 	UserAccessKey string
 	BucketName    string
 	ObjectName    string
@@ -284,8 +290,14 @@ type PsqlBucketObjectBackup struct {
 	PayloadCID    string `gorm:"column:payload_cid"`
 	PayloadURL    string `gorm:"column:payload_url"`
 	MsID          int64  `gorm:"column:ms_id"`
+	PlanID        uint   `gorm:"column:plan_id"`
+	PlanName      string `gorm:"column:plan_name"`
+	Providers     string
 	Status        int
 	StatusMsg     string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	DeletedAt     gorm.DeletedAt `gorm:"index"`
 }
 
 type PsqlBucketObjectBackupSlice struct {
@@ -434,4 +446,63 @@ func syncBackupDetail(id uint, fd *FileDesc) error {
 		}
 	}
 	return nil
+}
+
+func RecordRemoveObjectInfo(accessKey, bucket string, objects []string) error {
+	records := make([]PsqlBucketObjectRemove, 0, len(objects))
+	for _, obj := range objects {
+		backup := PsqlBucketObjectBackup{
+			BucketName: bucket,
+			ObjectName: obj,
+		}
+		if err := pdb.Where(backup).First(&backup).Error; err != nil {
+			logs.GetLogger().Error(err)
+		}
+		records = append(records, PsqlBucketObjectRemove{
+			UserAccessKey: accessKey,
+			BucketName:    bucket,
+			ObjectName:    obj,
+			BackUpID:      backup.ID,
+			PayloadCID:    backup.PayloadCID,
+			PayloadURL:    backup.PayloadURL,
+		})
+	}
+	return pdb.CreateInBatches(records, len(records)).Error
+}
+
+type PsqlBucketObjectRemove struct {
+	ID            uint `gorm:"primarykey"`
+	UserAccessKey string
+	BucketName    string
+	ObjectName    string
+	IsDir         bool
+	Size          int64
+	VersionID     string `gorm:"column:version_id"`
+	BackUpID      uint   `gorm:"column:backup_id"`
+	PayloadCID    string `gorm:"column:payload_cid"`
+	PayloadURL    string `gorm:"column:payload_url"`
+	Status        int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type PsqlBucketObjectRebuild struct {
+	ID            uint `gorm:"primarykey"`
+	UserAccessKey string
+	BucketName    string
+	ObjectName    string
+	MsID          int64
+	PlanID        uint
+	PlanName      string
+	IsDir         bool
+	Size          int64
+	VersionID     string `gorm:"column:version_id"`
+	BackupID      uint   `gorm:"column:backup_id"`
+	PayloadCID    string `gorm:"column:payload_cid"`
+	PayloadURL    string `gorm:"column:payload_url"`
+	Providers     string `gorm:"column:providers"`
+	DueAt         int64  `gorm:"column:due_at"`
+	Status        int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }

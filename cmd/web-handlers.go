@@ -696,7 +696,7 @@ type RemoveObjectArgs struct {
 }
 
 // RemoveObject - removes an object, or all the objects at a given prefix.
-func (web *webAPIHandlers) RemoveObject(r *http.Request, args *RemoveObjectArgs, reply *WebGenericRep) error {
+func (web *webAPIHandlers) RemoveObject(r *http.Request, args *RemoveObjectArgs, reply *WebGenericRep) (err error) {
 	ctx := newWebContext(r, args, "WebRemoveObject")
 	objectAPI := web.ObjectAPI()
 	if objectAPI == nil {
@@ -741,6 +741,12 @@ func (web *webAPIHandlers) RemoveObject(r *http.Request, args *RemoveObjectArgs,
 		return toJSONError(ctx, errInvalidBucketName, args.BucketName)
 	}
 
+	defer func() {
+		if err == nil {
+			scheduler.RecordRemoveObjectInfo(claims.AccessKey, args.BucketName, args.Objects)
+		}
+	}()
+
 	reply.UIVersion = Version
 	if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
 		sr, err := globalDNSConfig.Get(args.BucketName)
@@ -782,7 +788,7 @@ func (web *webAPIHandlers) RemoveObject(r *http.Request, args *RemoveObjectArgs,
 		VersionSuspended: globalBucketVersioningSys.Suspended(args.BucketName),
 	}
 	var (
-		err           error
+		// err           error
 		replicateSync bool
 	)
 
@@ -6512,11 +6518,12 @@ type AddVolumeBackupPlanRequest struct {
 	Duration       string `json:"duration"`
 	VerifiedDeal   bool   `json:"verifiedDeal"`
 	FastRetrieval  bool   `json:"fastRetrieval"`
+	Bucket         string `json:"bucket"`
 }
 
 type UpdateVolumeBackupPlanRequest struct {
-	BackupPlanId int    `json:"backupPlanId"`
-	Status       string `json:"Status"`
+	BackupPlanId int `json:"backupPlanId"`
+	Status       int `json:"Status"`
 }
 
 type AddVolumeBackupPlanResponse struct {
@@ -7166,6 +7173,12 @@ func (web *webAPIHandlers) BackupVolumeAddPlan(w http.ResponseWriter, r *http.Re
 
 func (web *webAPIHandlers) PsqlBackupVolumeAddPlan(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "WebPsqlRebuildAddPlan")
+	claims, permissionAllow, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
 	// check authorization
 	auth := authorization(w, r, ctx, "", "")
 	if auth != "" {
@@ -7173,13 +7186,18 @@ func (web *webAPIHandlers) PsqlBackupVolumeAddPlan(w http.ResponseWriter, r *htt
 	}
 
 	//get request body
-	decoder := json.NewDecoder(r.Body)
-	var addVolumeBackupPlanRequest AddVolumeBackupPlanRequest
-	err := decoder.Decode(&addVolumeBackupPlanRequest)
-	if err != nil {
+	var req AddVolumeBackupPlanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
 		return
+	}
+
+	buckets := strings.Split(req.Bucket, ",")
+	for _, bucket := range buckets {
+		if !permissionAllow(bucket, "") {
+			return
+		}
 	}
 
 	//open backup db
@@ -7200,16 +7218,17 @@ func (web *webAPIHandlers) PsqlBackupVolumeAddPlan(w http.ResponseWriter, r *htt
 	timestamp := strconv.FormatInt(time.Now().UTC().UnixNano()/1000, 10)
 
 	newbackupPlan := PsqlVolumeBackupPlan{
-		Name:          addVolumeBackupPlanRequest.BackupPlanName,
-		Interval:      addVolumeBackupPlanRequest.BackupInterval,
-		MinerRegion:   addVolumeBackupPlanRequest.MinerRegion,
-		Price:         addVolumeBackupPlanRequest.Price,
-		Duration:      addVolumeBackupPlanRequest.Duration,
-		VerifiedDeal:  addVolumeBackupPlanRequest.VerifiedDeal,
-		FastRetrieval: addVolumeBackupPlanRequest.FastRetrieval,
-		Status:        StatusBackupPlanEnabled,
+		Name:          req.BackupPlanName,
+		Interval:      req.BackupInterval,
+		MinerRegion:   req.MinerRegion,
+		Price:         req.Price,
+		Duration:      req.Duration,
+		VerifiedDeal:  req.VerifiedDeal,
+		FastRetrieval: req.FastRetrieval,
+		StatusMsg:     StatusBackupPlanEnabled,
 		CreatedOn:     timestamp,
 		UpdatedOn:     timestamp,
+		Bucket:        req.Bucket,
 	}
 
 	result := db.Create(&newbackupPlan)
@@ -8427,7 +8446,9 @@ type PsqlVolumeBackupPlan struct {
 	Duration      string
 	VerifiedDeal  bool
 	FastRetrieval bool
-	Status        string
+	Bucket        string
+	Status        int
+	StatusMsg     string
 	LastBackupOn  string
 	CreatedOn     string
 	UpdatedOn     string
@@ -8665,87 +8686,27 @@ func (web *webAPIHandlers) Backup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if authErr != nil {
-		if authErr == errNoAuthToken {
-			// Check if anonymous (non-owner) has access to download objects.
-			if !globalPolicySys.IsAllowed(policy.Args{
-				Action:          policy.GetObjectAction,
-				BucketName:      bucket,
-				ConditionValues: getConditionValues(r, "", "", nil),
-				IsOwner:         false,
-				ObjectName:      object,
-			}) {
-				w.WriteHeader(http.StatusUnauthorized)
-				sendResponse := AuthToken{Status: FailResponseStatus, Message: "Authentication failed, FS3 token missing"}
-				errJson, _ := json.Marshal(sendResponse)
-				w.Write(errJson)
-				return
-			}
-			if globalPolicySys.IsAllowed(policy.Args{
-				Action:          policy.GetObjectRetentionAction,
-				BucketName:      bucket,
-				ConditionValues: getConditionValues(r, "", "", nil),
-				IsOwner:         false,
-				ObjectName:      object,
-			}) {
-
-			}
-			if globalPolicySys.IsAllowed(policy.Args{
-				Action:          policy.GetObjectLegalHoldAction,
-				BucketName:      bucket,
-				ConditionValues: getConditionValues(r, "", "", nil),
-				IsOwner:         false,
-				ObjectName:      object,
-			}) {
-
-			}
-		} else {
-			w.WriteHeader(http.StatusUnauthorized)
-			sendResponse := AuthToken{Status: FailResponseStatus, Message: "Authentication failed, check your FS3 token"}
-			errJson, _ := json.Marshal(sendResponse)
-			w.Write(errJson)
-			return
-		}
+		w.WriteHeader(http.StatusUnauthorized)
+		sendResponse := AuthToken{Status: FailResponseStatus, Message: authErr.Error()}
+		errJson, _ := json.Marshal(sendResponse)
+		w.Write(errJson)
+		return
 	}
 
-	// For authenticated users apply IAM policy.
-	if authErr == nil {
-		if !globalIAMSys.IsAllowed(iampolicy.Args{
-			AccountName:     claims.AccessKey,
-			Action:          iampolicy.GetObjectAction,
-			BucketName:      bucket,
-			ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
-			IsOwner:         owner,
-			ObjectName:      object,
-			Claims:          claims.Map(),
-		}) {
-			w.WriteHeader(http.StatusUnauthorized)
-			sendResponseIam := AuthToken{Status: FailResponseStatus, Message: "Authentication failed, check your FS3 token"}
-			errJsonIam, _ := json.Marshal(sendResponseIam)
-			w.Write(errJsonIam)
-			return
-		}
-		if globalIAMSys.IsAllowed(iampolicy.Args{
-			AccountName:     claims.AccessKey,
-			Action:          iampolicy.GetObjectRetentionAction,
-			BucketName:      bucket,
-			ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
-			IsOwner:         owner,
-			ObjectName:      object,
-			Claims:          claims.Map(),
-		}) {
-
-		}
-		if globalIAMSys.IsAllowed(iampolicy.Args{
-			AccountName:     claims.AccessKey,
-			Action:          iampolicy.GetObjectLegalHoldAction,
-			BucketName:      bucket,
-			ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
-			IsOwner:         owner,
-			ObjectName:      object,
-			Claims:          claims.Map(),
-		}) {
-
-		}
+	if !globalIAMSys.IsAllowed(iampolicy.Args{
+		AccountName:     claims.AccessKey,
+		Action:          iampolicy.GetObjectAction,
+		BucketName:      bucket,
+		ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
+		IsOwner:         owner,
+		ObjectName:      object,
+		Claims:          claims.Map(),
+	}) {
+		w.WriteHeader(http.StatusUnauthorized)
+		sendResponseIam := AuthToken{Status: FailResponseStatus, Message: "permission denied"}
+		errJsonIam, _ := json.Marshal(sendResponseIam)
+		w.Write(errJsonIam)
+		return
 	}
 
 	// Check if bucket is a reserved bucket name or invalid.
@@ -8772,30 +8733,11 @@ func (web *webAPIHandlers) Backup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decoder := json.NewDecoder(r.Body)
 	var onlineDealRequest OnlineDealRequest
-	err = decoder.Decode(&onlineDealRequest)
+	err = json.NewDecoder(r.Body).Decode(&onlineDealRequest)
 	if err != nil && err != io.EOF {
 		w.Write([]byte(fmt.Sprintf("bad request: %s", err.Error())))
 		return
-	}
-
-	_ = func(address string) (string, error) {
-		addr := net.ParseIP(address)
-		if addr != nil {
-			// Host is an ip address
-			err := errors.New("for dev env, please provide a header with valid Host, exp: a5a84b78-dd4a-45f4-bd90-31428fc23a21.cygnus.nbai.io")
-			return "", err
-		} else {
-			// Host is a host name
-			domainSegments := strings.Split(address, ".")
-			if len(domainSegments) > 1 {
-				return domainSegments[0], nil
-			} else {
-				err := errors.New(fmt.Sprintf("invalid Host in header %s", address))
-				return "", err
-			}
-		}
 	}
 
 	err = backup(claims.AccessKey, bucket, object)
@@ -8817,7 +8759,6 @@ func backup(accessKey, bucket, object string) (err error) {
 	}
 	fs3VolumeAddress := config.GetUserConfig().Fs3VolumeAddress
 	sourceFilePath := filepath.Join(fs3VolumeAddress, bucket, object)
-	client := scheduler.NewMetaClient(env.Get("SWAN_KEY", ""), env.Get("SWAN_TOKEN", ""), env.Get("META_SERVER", ""))
 	fi, err := os.Stat(sourceFilePath)
 	if err != nil {
 		return
@@ -8836,6 +8777,7 @@ func backup(accessKey, bucket, object string) (err error) {
 		values.Set("format", "zip")
 	}
 	downloadURL += "?" + values.Encode()
+	client := scheduler.NewMetaClient(env.Get("SWAN_KEY", ""), env.Get("SWAN_TOKEN", ""), env.Get("META_SERVER", ""))
 	id, err := client.Backup(bucket+"-"+fi.Name(), filWallet, &scheduler.FileData{
 		SourceName:  fi.Name(),
 		DataSize:    fi.Size(),
@@ -8857,4 +8799,398 @@ func backup(accessKey, bucket, object string) (err error) {
 		Filepath:      sourceFilePath,
 		MsID:          id,
 	}).Error
+}
+
+func (web *webAPIHandlers) BackupInfo(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "BackupInfo")
+
+	claims, permissionAllow, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	vars := mux.Vars(r)
+
+	bucket := vars["bucket"]
+	object, err := unescapePath(vars["object"])
+	if err != nil {
+		writeWebErrorResponse(w, err)
+		logs.GetLogger().Error(err)
+		return
+	}
+
+	if !permissionAllow(bucket, object) {
+		return
+	}
+
+	backups, err := backupInfo(bucket, object)
+	if err != nil {
+		writeWebErrorResponse(w, err)
+		return
+	}
+	infoList := make([]*BackupInfo, 0, len(backups))
+	for _, backup := range backups {
+		infoList = append(infoList, &BackupInfo{
+			Size:      backup.Size,
+			IpfsCID:   backup.PayloadCID,
+			Providers: strings.Split(backup.Providers, ","),
+			CreatedAt: backup.CreatedAt.Unix(),
+		})
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: infoList})
+	w.Write(b)
+}
+
+func backupInfo(bucket, object string) (backups []*scheduler.PsqlBucketObjectBackup, err error) {
+	backup := scheduler.PsqlBucketObjectBackup{}
+	if err = scheduler.GetPDB().Model(backup).Where(backup).Find(&backups).Error; err != nil {
+		return
+	}
+	return
+}
+
+type Response struct {
+	Data    interface{} `json:"data"`
+	Status  string      `json:"status"`
+	Message string      `json:"message"`
+}
+
+type BackupReq struct {
+	Bucket      string `json:"bucket"`
+	MinerRegion string `json:"miner_region"`
+	Duration    string `json:"duration"`
+}
+
+type BackupInfo struct {
+	Size      int64    `json:"size"`
+	IpfsCID   string   `json:"ipfs_cid"`
+	Providers []string `json:"providers"`
+	CreatedAt int64    `json:"created_at"`
+	Duration  string   `json:"duration"`
+	Status    int      `json:"status"`
+	StatusMsg string   `json:"status_msg"`
+}
+
+type RebuildReq struct {
+	BackupID uint   `json:"backup_id"`
+	Object   string `json:"object"`
+}
+
+type RebuildInfo struct {
+	ID          uint     `json:"id"`
+	BackUpID    uint     `json:"backup_id"`
+	PlanID      uint     `json:"plan_id"`
+	PlanName    string   `json:"plan_name"`
+	Providers   []string `json:"providers"`
+	PayloadCID  string   `json:"payload_cid"`
+	Status      int      `json:"status"`
+	DownloadURL string   `json:"download_url"`
+}
+
+func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "RebuildObject")
+	claims, permissionAllow, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+	if !permissionAllow("", "") {
+		return
+	}
+	var req RebuildReq
+	err = json.NewDecoder(r.Body).Decode(&req)
+	if err != nil && err != io.EOF {
+		w.Write([]byte(fmt.Sprintf("bad request: %s", err.Error())))
+		return
+	}
+
+	// query backup
+	db := scheduler.GetPDB()
+	backup := scheduler.PsqlBucketObjectBackup{
+		ID: req.BackupID,
+	}
+	if err := db.First(&backup).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+
+	client := scheduler.NewMetaClient(env.Get("SWAN_KEY", ""), env.Get("SWAN_TOKEN", ""), env.Get("META_SERVER", ""))
+	data, err := client.Rebuild(backup.MsID, req.Object)
+	if err != nil {
+		logs.GetLogger().Error("backup error:", err)
+		return
+	}
+
+	rebuild := scheduler.PsqlBucketObjectRebuild{
+		BackupID:   backup.ID,
+		ObjectName: req.Object,
+	}
+	if err := db.Where(rebuild).First(&rebuild).Error; err != nil {
+		// insert record
+		rebuild.UserAccessKey = claims.AccessKey
+		rebuild.BucketName = backup.BucketName
+		rebuild.Status = data.Status
+		rebuild.MsID = backup.MsID
+		rebuild.PlanID = backup.PlanID
+		rebuild.PlanName = backup.PlanName
+		rebuild.BackupID = backup.ID
+		rebuild.DueAt = data.DueAt
+
+		if err = db.Create(rebuild).Error; err != nil {
+			logs.GetLogger().Error(err)
+			writeWebErrorResponse(w, err)
+			return
+		}
+	} else {
+		rebuild.Status = data.Status
+		rebuild.PayloadCID = data.PayloadCID
+		rebuild.PayloadURL = data.PayloadURL
+		err := db.Model(rebuild).Updates(scheduler.PsqlBucketObjectRebuild{
+			Status:     data.Status,
+			PayloadCID: data.PayloadCID,
+			PayloadURL: data.PayloadURL,
+		}).Error
+		if err != nil {
+			logs.GetLogger().Error(err)
+			writeWebErrorResponse(w, err)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus})
+	w.Write(b)
+}
+
+func (web *webAPIHandlers) RebuildObjectInfo(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "RebuildObjectInfo")
+	claims, permissionAllow, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+	if !permissionAllow("", "") {
+		return
+	}
+	vars := mux.Vars(r)
+	id, err := strconv.ParseUint(vars["id"], 10, 64)
+	if err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	// query backup
+	db := scheduler.GetPDB()
+	rebuild := scheduler.PsqlBucketObjectRebuild{
+		ID: uint(id),
+	}
+	if err := db.First(&rebuild).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+
+	client := scheduler.NewMetaClient(env.Get("SWAN_KEY", ""), env.Get("SWAN_TOKEN", ""), env.Get("META_SERVER", ""))
+	data, err := client.Rebuild(rebuild.MsID, rebuild.ObjectName)
+	if err != nil {
+		logs.GetLogger().Error("backup error:", err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+
+	err = db.Model(rebuild).Updates(scheduler.PsqlBucketObjectRebuild{
+		Status:     data.Status,
+		PayloadCID: data.PayloadCID,
+		PayloadURL: data.PayloadURL,
+		Providers:  strings.Join(data.Providers, ","),
+	}).Error
+	if err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: &RebuildInfo{
+		ID:          rebuild.ID,
+		BackUpID:    rebuild.BackupID,
+		PlanID:      rebuild.PlanID,
+		PlanName:    rebuild.PlanName,
+		Providers:   data.Providers,
+		PayloadCID:  data.PayloadCID,
+		Status:      data.Status,
+		DownloadURL: data.PayloadURL,
+	}})
+	w.Write(b)
+}
+
+func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Request) {
+	const defaulePageSize, limit = 10, 20
+	ctx := newContext(r, w, "RebuildList")
+	claims, permissionAllow, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+	if !permissionAllow("", "") {
+		return
+	}
+	vars := mux.Vars(r)
+	pageNo, err := strconv.ParseUint(vars["page_no"], 10, 64)
+	if err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	pageSize, err := strconv.ParseUint(vars["page_size"], 10, 64)
+	if err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	if pageSize >= limit {
+		pageSize = limit
+	}
+	// query backup
+	db := scheduler.GetPDB()
+	var rebuilds []*scheduler.PsqlBucketObjectRebuild
+	if err := db.Model(scheduler.PsqlBucketObjectRebuild{}).Offset(int(pageNo * pageSize)).Limit(int(pageSize)).Find(&rebuilds).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+
+	list := make([]*RebuildInfo, 0, len(rebuilds))
+	for _, rebuild := range rebuilds {
+		list = append(list, &RebuildInfo{
+			ID:          rebuild.ID,
+			BackUpID:    rebuild.BackupID,
+			PlanID:      rebuild.PlanID,
+			PlanName:    rebuild.PlanName,
+			Providers:   strings.Split(rebuild.Providers, ","),
+			PayloadCID:  rebuild.PayloadCID,
+			Status:      rebuild.Status,
+			DownloadURL: rebuild.PayloadURL,
+		})
+	}
+
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: list})
+	w.Write(b)
+}
+
+func (web *webAPIHandlers) ListArchiveBuckets(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "ListArchiveBuckets")
+	claims, permissionAllow, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	db := scheduler.GetPDB()
+	var buckets []string
+	if err := db.Model(scheduler.PsqlBucketObjectRemove{}).Select("bucket_name").Distinct("bucket_name").Scan(&buckets).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	perBuckets := make([]string, 0, len(buckets))
+	for _, bucket := range buckets {
+		if permissionAllow(bucket, "") {
+			perBuckets = append(perBuckets, bucket)
+		}
+	}
+	perBuckets = append(perBuckets, "Other")
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: perBuckets})
+	w.Write(b)
+}
+
+func (web *webAPIHandlers) ListArchiveObjects(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "ListArchiveObjects")
+	claims, permissionAllow, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	vars := mux.Vars(r)
+	bucket := vars["bucket"]
+
+	db := scheduler.GetPDB()
+	remove := &scheduler.PsqlBucketObjectRemove{
+		BucketName: bucket,
+	}
+	var removeObjs []*scheduler.PsqlBucketObjectRemove
+	if err := db.Model(remove).Where(remove).Find(&removeObjs).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+
+	var list []*ArchiveRemoveObject
+	for _, obj := range removeObjs {
+		if permissionAllow(obj.BucketName, "") {
+			list = append(list, &ArchiveRemoveObject{
+				ID:          obj.ID,
+				BucketName:  bucket,
+				FileName:    obj.ObjectName,
+				DateRemoved: obj.CreatedAt.Unix(),
+				DataCID:     obj.PayloadCID,
+				DueDate:     "",
+				Status:      0,
+				CanRebuild:  false,
+			})
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: list})
+	w.Write(b)
+}
+
+type ArchiveRemoveObject struct {
+	ID          uint   `json:"id"`
+	BucketName  string `json:"bucket_name"`
+	FileName    string `json:"file_name"`
+	DateRemoved int64  `json:"date_removed"`
+	DataCID     string `json:"data_cid"`
+	DueDate     string `json:"due_date"`
+	Status      int    `json:"status"`
+	CanRebuild  bool   `json:"can_rebuild"`
+}
+
+func (web *webAPIHandlers) verify(w http.ResponseWriter, r *http.Request) (claims *jwt.MapClaims, permissionAllow func(bucket, object string) bool, err error) {
+	claims, owner, authErr := webRequestAuthenticate(r)
+	if authErr != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		sendResponse := AuthToken{Status: FailResponseStatus, Message: authErr.Error()}
+		b, _ := json.Marshal(sendResponse)
+		w.Write(b)
+		return nil, nil, authErr
+	}
+
+	return claims, func(bucket, object string) bool {
+		if !globalIAMSys.IsAllowed(iampolicy.Args{
+			AccountName:     claims.AccessKey,
+			Action:          iampolicy.GetObjectAction,
+			BucketName:      bucket,
+			ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
+			IsOwner:         owner,
+			ObjectName:      object,
+			Claims:          claims.Map(),
+		}) {
+			w.WriteHeader(http.StatusUnauthorized)
+			sendResponseIam := AuthToken{Status: FailResponseStatus, Message: "permission denied"}
+			b, _ := json.Marshal(sendResponseIam)
+			w.Write(b)
+			return false
+		}
+		// Check if bucket is a reserved bucket name or invalid.
+		if isReservedOrInvalidBucket(bucket, false) {
+			writeWebErrorResponse(w, errInvalidBucketName)
+			return false
+		}
+		return true
+	}, nil
 }

@@ -4,6 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	ioioutil "io/ioutil"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"time"
+
 	"github.com/codingsince1985/checksum"
 	clientmodel "github.com/filswan/go-swan-client/model"
 	"github.com/filswan/go-swan-client/subcommand"
@@ -21,13 +29,6 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	ioioutil "io/ioutil"
-	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
-	"time"
 )
 
 const (
@@ -386,8 +387,8 @@ func AddBackupVolumeJobs(plansId []int) ([]VolumeBackupRequest, error) {
 
 	var volumeBackupRequests []VolumeBackupRequest
 	for _, v := range plansId {
-		var backupPlan PsqlVolumeBackupPlan
-		if err := db.First(&backupPlan, v).Error; err != nil {
+		var plan PsqlVolumeBackupPlan
+		if err := db.First(&plan, v).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				logs.GetLogger().Info("No record found in database")
 				continue
@@ -397,12 +398,13 @@ func AddBackupVolumeJobs(plansId []int) ([]VolumeBackupRequest, error) {
 			}
 		}
 		backupJob := PsqlVolumeBackupJob{
-			Name:               backupPlan.Name,
-			VolumeBackupPlanID: backupPlan.ID,
-			Duration:           backupPlan.Duration,
-			CreatedOn:          timestamp,
-			UpdatedOn:          timestamp,
-			Status:             StatusBackupTaskCreated,
+			PlanID:    plan.ID,
+			PlanName:  plan.Name,
+			Bucket:    plan.Bucket,
+			Duration:  plan.Duration,
+			CreatedOn: timestamp,
+			UpdatedOn: timestamp,
+			StatusMsg: StatusBackupTaskCreated,
 		}
 		if err := db.Create(&backupJob).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -425,8 +427,8 @@ func AddBackupVolumeJobs(plansId []int) ([]VolumeBackupRequest, error) {
 		}
 		volumeBackupRequest := VolumeBackupRequest{
 			BackupTaskId:   job.ID,
-			BackupPlanId:   backupPlan.ID,
-			BackupPlanName: backupPlan.Name,
+			BackupPlanId:   plan.ID,
+			BackupPlanName: plan.Name,
 		}
 		volumeBackupRequests = append(volumeBackupRequests, volumeBackupRequest)
 	}
@@ -693,7 +695,7 @@ func SaveBackupTaskToDb(task []*subcommand.Deal, backupPlanId int, backupTaskId 
 
 		var job PsqlVolumeBackupJob
 		db.Where("id=?", backupTaskId).First(&job)
-		job.Status = StatusBackupTaskRunning
+		job.StatusMsg = StatusBackupTaskRunning
 		job.UpdatedOn = timestamp
 		job.Uuid = task.Uuid
 		job.SourceFileName = task.SourceFileName
@@ -757,6 +759,7 @@ func GetPsqlDb() (*gorm.DB, error) {
 type PsqlVolumeBackupPlan struct {
 	ID            int `gorm:"primary_key"`
 	Name          string
+	Bucket        string
 	Interval      string
 	MinerRegion   string
 	Price         string
@@ -770,25 +773,32 @@ type PsqlVolumeBackupPlan struct {
 }
 
 type PsqlVolumeBackupJob struct {
-	ID                 int `gorm:"primary_key"`
-	Name               string
-	Uuid               string
-	SourceFileName     string
-	MinerId            string
-	DealCid            string
-	PayloadCid         string
-	FileSourceUrl      string
-	Md5                string
-	StartEpoch         int
-	PieceCid           string
-	FileSize           int64
-	Cost               string
-	Duration           string
-	Status             string
-	CreatedOn          string
-	UpdatedOn          string
-	VolumeBackupPlanID int
-	VolumeBackupPlan   PsqlVolumeBackupPlan `gorm:"foreignKey:VolumeBackupPlanID"`
+	ID             int `gorm:"primary_key"`
+	PlanID         int
+	PlanName       string
+	UserAccessKey  string
+	Bucket         string
+	PayloadCID     string
+	PayloadURL     string
+	Providers      string
+	Uuid           string
+	SourceFileName string
+	MinerId        string
+	DealCid        string
+	PayloadCid     string
+	FileSourceUrl  string
+	Md5            string
+	StartEpoch     int
+	PieceCid       string
+	FileSize       int64
+	Cost           string
+	Duration       string
+	Status         int
+	StatusMsg      string
+	CreatedOn      string
+	UpdatedOn      string
+	// VolumeBackupPlanID int
+	// VolumeBackupPlan PsqlVolumeBackupPlan `gorm:"foreignKey:PlanID"`
 }
 
 type PsqlVolumeBackupCarCsv struct {

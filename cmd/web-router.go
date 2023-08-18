@@ -123,6 +123,14 @@ func registerWebRouter(router *mux.Router) error {
 
 	// backup
 	webBrowserRouter.Methods(http.MethodPost).Path("/backup/{bucket}/{object:.+}").HandlerFunc(httpTraceHdrs(web.Backup))
+	webBrowserRouter.Methods(http.MethodGet).Path("/backup/{bucket}/{object:.+}").HandlerFunc(httpTraceHdrs(web.BackupInfo))
+
+	// rebuild
+	webBrowserRouter.Methods(http.MethodPost).Path("/rebuild").HandlerFunc(httpTraceHdrs(web.RebuildObject))
+	webBrowserRouter.Methods(http.MethodGet).Path("/rebuild/{id}").HandlerFunc(httpTraceHdrs(web.RebuildObjectInfo))
+	webBrowserRouter.Methods(http.MethodGet).Path("/rebuild").HandlerFunc(httpTraceHdrs(web.RebuildObjectList))
+	webBrowserRouter.Methods(http.MethodGet).Path("/archives").HandlerFunc(httpTraceHdrs(web.ListArchiveBuckets))
+	webBrowserRouter.Methods(http.MethodGet).Path("/archives/{bucket}").HandlerFunc(httpTraceHdrs(web.ListArchiveBuckets))
 
 	// These methods use short-expiry tokens in the URLs. These tokens may unintentionally
 	// be logged, so a new one must be generated for each request.

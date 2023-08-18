@@ -27,6 +27,18 @@ func NewMetaClient(key, token, server string) *metaClient {
 	}
 }
 
+func (m *metaClient) Rebuild(id int64, object string) (data *RebuildResp, err error) {
+	var req struct {
+		DatasetID int64  `json:"dataset_id"`
+		Object    string `json:"object"`
+	}
+	req.DatasetID = id
+	req.Object = object
+	data = &RebuildResp{}
+	err = m.postReq("meta.DatasetRebuild", []interface{}{req}, data)
+	return data, err
+}
+
 func (m *metaClient) Backup(name string, wallet string, data ...*FileData) (id int64, err error) {
 	if len(data) == 0 {
 		return 0, errors.New("data is required")
@@ -139,4 +151,12 @@ type DealInfo struct {
 	MinerFid   string
 	StartEpoch int
 	Cost       string
+}
+
+type RebuildResp struct {
+	Status     int      `json:"status"`
+	PayloadCID string   `json:"payload_cid"`
+	PayloadURL string   `json:"payload_url"`
+	Providers  []string `json:"providers"`
+	DueAt      int64    `json:"due_at"`
 }
