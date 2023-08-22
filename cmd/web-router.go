@@ -120,20 +120,20 @@ func registerWebRouter(router *mux.Router) error {
 
 	// s3
 	webBrowserRouter.Methods(http.MethodPost).Path("/bucket/import/s3").HandlerFunc(httpTraceHdrs(web.S3Import))
-	webBrowserRouter.Methods(http.MethodGet).Path("/bucket/{bucket}/import").HandlerFunc(httpTraceHdrs(web.S3ImportList))
+	webBrowserRouter.Methods(http.MethodGet).Path("/bucket/{bucket}/import").Queries("page_no", "{page_no:.*}").Queries("page_size", "{page_size:.*}").HandlerFunc(httpTraceHdrs(web.S3ImportList))
 
 	// backup
 	webBrowserRouter.Methods(http.MethodPost).Path("/backup/{bucket}/{object:.+}").HandlerFunc(httpTraceHdrs(web.Backup))
-	webBrowserRouter.Methods(http.MethodGet).Path("/backup/{bucket}/{object:.+}").HandlerFunc(httpTraceHdrs(web.BackupInfo))
+	webBrowserRouter.Methods(http.MethodGet).Path("/backup/{bucket}/{object:.+}").Queries("page_no", "{page_no:.*}").Queries("page_size", "{page_size:.*}").HandlerFunc(httpTraceHdrs(web.BackupInfo))
 
 	// rebuild
 	webBrowserRouter.Methods(http.MethodPost).Path("/rebuild").HandlerFunc(httpTraceHdrs(web.RebuildObject))
 	webBrowserRouter.Methods(http.MethodGet).Path("/rebuild/{id}").HandlerFunc(httpTraceHdrs(web.RebuildObjectInfo))
-	webBrowserRouter.Methods(http.MethodGet).Path("/rebuild").HandlerFunc(httpTraceHdrs(web.RebuildObjectList))
+	webBrowserRouter.Methods(http.MethodGet).Path("/rebuild").Queries("page_no", "{page_no:.*}").Queries("page_size", "{page_size:.*}").HandlerFunc(httpTraceHdrs(web.RebuildObjectList))
 
 	// archives
-	webBrowserRouter.Methods(http.MethodGet).Path("/archives").HandlerFunc(httpTraceHdrs(web.ListArchiveBuckets))
-	webBrowserRouter.Methods(http.MethodGet).Path("/archives/{bucket}").HandlerFunc(httpTraceHdrs(web.ListArchiveObjects))
+	webBrowserRouter.Methods(http.MethodGet).Path("/archives").Queries("page_no", "{page_no:.*}").Queries("page_size", "{page_size:.*}").HandlerFunc(httpTraceHdrs(web.ListArchiveBuckets))
+	webBrowserRouter.Methods(http.MethodGet).Path("/archives/{bucket}").Queries("page_no", "{page_no:.*}").Queries("page_size", "{page_size:.*}").HandlerFunc(httpTraceHdrs(web.ListArchiveObjects))
 
 	// These methods use short-expiry tokens in the URLs. These tokens may unintentionally
 	// be logged, so a new one must be generated for each request.

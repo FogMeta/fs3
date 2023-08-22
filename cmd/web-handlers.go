@@ -8753,18 +8753,20 @@ func (web *webAPIHandlers) Backup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	getObjectNInfo := objectAPI.GetObjectNInfo
-	if web.CacheAPI() != nil {
-		getObjectNInfo = web.CacheAPI().GetObjectNInfo
+	if !strings.HasSuffix(object, "/") {
+		getObjectNInfo := objectAPI.GetObjectNInfo
+		if web.CacheAPI() != nil {
+			getObjectNInfo = web.CacheAPI().GetObjectNInfo
+		}
+		var opts ObjectOptions
+		gr, err := getObjectNInfo(ctx, bucket, object, nil, r.Header, readLock, opts)
+		if err != nil {
+			logs.GetLogger().Error(err)
+			writeWebErrorResponse(w, err)
+			return
+		}
+		defer gr.Close()
 	}
-	var opts ObjectOptions
-	gr, err := getObjectNInfo(ctx, bucket, object, nil, r.Header, readLock, opts)
-	if err != nil {
-		logs.GetLogger().Error(err)
-		writeWebErrorResponse(w, err)
-		return
-	}
-	defer gr.Close()
 
 	var onlineDealRequest OnlineDealRequest
 	err = json.NewDecoder(r.Body).Decode(&onlineDealRequest)
@@ -9206,7 +9208,7 @@ func (web *webAPIHandlers) ListArchiveBuckets(w http.ResponseWriter, r *http.Req
 
 	w.WriteHeader(http.StatusOK)
 	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: DataWithCount{
-		Total: len(list),
+		Total: total,
 		List:  list,
 	}})
 	w.Write(b)
@@ -9222,13 +9224,19 @@ func (web *webAPIHandlers) ListArchiveObjects(w http.ResponseWriter, r *http.Req
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
+	offset, limit, err := parsePage(vars)
+	if err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
 
 	db := scheduler.GetPDB()
 	remove := &scheduler.PsqlBucketObjectRemove{
 		BucketName: bucket,
 	}
 	var removeObjs []*scheduler.PsqlBucketObjectRemove
-	if err := db.Model(remove).Where(remove).Find(&removeObjs).Error; err != nil {
+	if err := db.Model(remove).Where(remove).Offset(offset).Limit(limit).Find(&removeObjs).Error; err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
 		return
@@ -9247,9 +9255,23 @@ func (web *webAPIHandlers) ListArchiveObjects(w http.ResponseWriter, r *http.Req
 			})
 		}
 	}
+
+	total := len(list)
+	if total < limit {
+		total += offset
+	} else {
+		var count int64
+		if err := db.Model(scheduler.PsqlBucketObjectRebuild{}).Count(&count).Error; err != nil {
+			logs.GetLogger().Error(err)
+			writeWebErrorResponse(w, err)
+			return
+		}
+		total = int(count)
+	}
+
 	w.WriteHeader(http.StatusOK)
 	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: DataWithCount{
-		Total: len(list),
+		Total: total,
 		List:  list,
 	}})
 	w.Write(b)
@@ -9294,7 +9316,7 @@ func (web *webAPIHandlers) verify(w http.ResponseWriter, r *http.Request) (claim
 			return false
 		}
 		// Check if bucket is a reserved bucket name or invalid.
-		if isReservedOrInvalidBucket(bucket, false) {
+		if bucket != "" && isReservedOrInvalidBucket(bucket, false) {
 			writeWebErrorResponse(w, errInvalidBucketName)
 			return false
 		}
@@ -9303,14 +9325,25 @@ func (web *webAPIHandlers) verify(w http.ResponseWriter, r *http.Request) (claim
 }
 
 func parsePage(vars map[string]string) (offset int, limit int, err error) {
-	no, err := strconv.ParseUint(vars["page_no"], 10, 64)
-	if err != nil {
-		return
+	logs.GetLogger().Error(vars)
+	var no uint64
+	pn := vars["page_no"]
+	if pn != "" {
+		no, err = strconv.ParseUint(pn, 10, 64)
+		if err != nil {
+			return
+		}
 	}
-	size, err := strconv.ParseUint(vars["page_size"], 10, 64)
-	if err != nil {
-		return
+
+	var size uint64
+	ps := vars["page_size"]
+	if ps != "" {
+		size, err = strconv.ParseUint(ps, 10, 64)
+		if err != nil {
+			return
+		}
 	}
+
 	if size == 0 {
 		size = 10
 	} else if size > 20 {
