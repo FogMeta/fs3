@@ -385,10 +385,10 @@ export default {
           //let postUrl = `http://192.168.88.41:9000/minio/deal/` + _this.postAdress
 
           let minioDeal = {
-            "verified_deal": _this.ruleForm.verified == '2' ? 'false' : 'true',
-            "fast_retrieval": _this.ruleForm.fastRetirval == '2' ? 'false' : 'true',
+            "verified_deal": _this.ruleForm.verified == '2' ? false : true,
+            "fast_retrieval": _this.ruleForm.fastRetirval == '2' ? false : true,
             "provider_region": _this.ruleForm.region,
-            "duration": _this.ruleForm.duration
+            "duration": Number(_this.ruleForm.duration)
           }
 
           axios.post(postUrl, minioDeal, {            headers: {

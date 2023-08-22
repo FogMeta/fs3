@@ -24,8 +24,8 @@
       <ul class="feh-actions">
         <li>
           <div class="dropdown btn-group">
-            <el-popover placement="bottom" width="400" trigger="click">
-              <div class="folder">
+            <el-popover placement="bottom" width="400" trigger="click" @show="load">
+              <div class="folder" v-loading="importLoad">
                 <div class="folder_style" v-for="(list, l) in importData" :key="l">
                   <div class="load_cont">
                     <p>{{list.bucket}}
@@ -47,7 +47,7 @@
                 </div>
               </div>
               <button type="button" class="btn btn-default pcIcon" slot="reference">
-                <i class=" el-icon-download"></i>
+                <i class="el-icon-refresh"></i>
               </button>
             </el-popover>
           </div>
@@ -155,8 +155,18 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column prop="data.status" label="Status"></el-table-column>
+              <el-table-column prop="data.status_msg" label="Status"></el-table-column>
             </el-table>
+
+            <div class="form_pagination">
+              <div class="pagination">
+                <el-pagination hide-on-single-page :total="parmaTable.total" :page-size="parmaTable.limit" :current-page="parmaTable.offset" :pager-count="bodyWidth ? 5 : 7" background :layout="
+              bodyWidth
+                ? 'prev, pager, next'
+                : 'total, prev, pager, next, jumper'
+            " @current-change="tablePaginChange" />
+              </div>
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="name" sortable label="Name">
@@ -456,7 +466,14 @@ export default {
         offset: 1,
         total: 0,
       },
-      loadImport: false
+      parmaTable: {
+        limit: 10,
+        offset: 1,
+        total: 0,
+      },
+      tableName: '',
+      loadImport: false,
+      importLoad: false
     }
   },
   computed: {
@@ -528,6 +545,7 @@ export default {
           that.expands.push(row.name)
           //open
         }
+        that.tableName = row.name
         that.tableJson(row.name)
       } else {
         that.expands = []
@@ -551,21 +569,31 @@ export default {
 
       console.log(this.tableData);
     },
+    tablePaginChange (val) {
+      this.parmaTable.offset = val;
+      this.tableJson(this.tableName);
+    },
     tableJson (name) {
       let _this = this
       _this.exChangeList = []
 
       let postUrl = _this.data_api + `/minio/backup/` + _this.currentBucket + `/` + name
-      axios.get(postUrl, {
+      let offsetTable = _this.parmaTable.offset > 0 ? _this.parmaTable.offset - 1 : 0;
+      let params = {
+        "page_no": offsetTable,   //default as 0 
+        "page_size": _this.parmaTable.limit   //default as 10
+      }
+      axios.get(`${postUrl}?${QS.stringify(params)}`, {
         headers: {
           'Authorization': "Bearer " + _this.$store.getters.accessToken
         }
       }).then((response) => {
         let json = response.data
         if (json.status == 'success') {
-          let dataAll = json.data
-          if (dataAll.deals && dataAll.deals.length > 0) {
-            dataAll.deals.map(item => {
+          _this.parmaTable.total = json.data.total
+          let dataAll = json.data.list || []
+          if (dataAll && dataAll.length > 0) {
+            dataAll.map(item => {
               if (item.data) {
                 item.data.visible = false
                 item.data.visibleDataCid = false
@@ -573,7 +601,7 @@ export default {
               }
             })
           }
-          _this.exChangeList = dataAll.deals
+          _this.exChangeList = dataAll
         } else {
           _this.$message.error(json.message);
           return false
@@ -1144,7 +1172,7 @@ export default {
     },
     importListData () {
       let _this = this
-      let postUrl = _this.data_api + `minio/bucket/${_this.currentBucket}/import`
+      let postUrl = _this.data_api + `/minio/bucket/${_this.currentBucket}/import`
       if (_this.parmaImport.offset === 1) _this.importData = []
       let offsetRebuild = _this.parmaImport.offset > 0 ? _this.parmaImport.offset - 1 : 0;
       let paramsRebuild = {
@@ -1164,8 +1192,10 @@ export default {
         console.log(error)
       });
       this.loadImport = false
+      this.importLoad = false
     },
     load () {
+      this.importLoad = true
       this.loadImport = true
       this.importListData()
       this.parmaImport.offset += 1
@@ -1178,7 +1208,7 @@ export default {
     },
     'currentBucket': function () {
       let _this = this
-      _this.load()
+      // _this.load()
       _this.currentBucketAll = _this.currentBucket.split('/')
     },
     'slideListClick': function () {
