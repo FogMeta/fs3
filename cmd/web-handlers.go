@@ -6522,8 +6522,8 @@ type AddVolumeBackupPlanRequest struct {
 }
 
 type UpdateVolumeBackupPlanRequest struct {
-	BackupPlanId int `json:"backupPlanId"`
-	Status       int `json:"Status"`
+	BackupPlanId int    `json:"backupPlanId"`
+	Status       string `json:"Status"`
 }
 
 type AddVolumeBackupPlanResponse struct {
@@ -7354,8 +7354,8 @@ func (web *webAPIHandlers) PsqlBackupVolumeUpdatePlan(w http.ResponseWriter, r *
 
 	//get request body
 	decoder := json.NewDecoder(r.Body)
-	var updateVolumeBackupPlanRequest UpdateVolumeBackupPlanRequest
-	err := decoder.Decode(&updateVolumeBackupPlanRequest)
+	var req UpdateVolumeBackupPlanRequest
+	err := decoder.Decode(&req)
 	if err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
@@ -7378,33 +7378,19 @@ func (web *webAPIHandlers) PsqlBackupVolumeUpdatePlan(w http.ResponseWriter, r *
 	}
 	defer sqlDB.Close()
 
-	timestamp := strconv.FormatInt(time.Now().UTC().UnixNano()/1000, 10)
-
-	var updatePlan PsqlVolumeBackupPlan
-	if err := db.First(&updatePlan, updateVolumeBackupPlanRequest.BackupPlanId).Error; err != nil {
+	var plan scheduler.PsqlBucketBackupPlan
+	if err := db.First(&plan, req.BackupPlanId).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			logs.GetLogger().Error(err)
 			writeWebErrorResponse(w, err)
 			return
 		}
 	}
-	updatePlan.Status = updateVolumeBackupPlanRequest.Status
-	updatePlan.UpdatedOn = timestamp
-	db.Save(&updatePlan)
-
-	updateVolumeBackupPlanResponse := PsqlAddVolumeBackupPlanResponse{
-		Data:    updatePlan,
-		Status:  SuccessResponseStatus,
-		Message: SuccessResponseStatus,
-	}
-	dataBytes, err := json.Marshal(updateVolumeBackupPlanResponse)
-	if err != nil {
-		logs.GetLogger().Error(err)
-		writeOfflineDealsErrorResponse(w, err)
-		return
-	}
-	w.Write(dataBytes)
-	return
+	plan.Status = scheduler.StatusCodeAble[req.Status]
+	db.Model(plan).Select("status").Updates(plan)
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(SendResponse{Status: SuccessResponseStatus})
+	w.Write(b)
 }
 
 func (web *webAPIHandlers) PsqlBackupAddJob(w http.ResponseWriter, r *http.Request) {
@@ -8569,6 +8555,75 @@ type PsqlVolumeRebuildRequest struct {
 	Limit  int `json:"limit"`
 }
 
+type ImportHistory struct {
+	Bucket   string `json:"bucket"`
+	Object   string `json:"object"`
+	Progress int    `json:"progress"`
+	Status   int    `json:"status"`
+}
+
+func (web *webAPIHandlers) S3ImportList(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "S3ImportList")
+
+	claims, permissionAllow, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	vars := mux.Vars(r)
+	bucket := vars["bucket"]
+	if !permissionAllow(bucket, "") {
+		return
+	}
+
+	var req PsqlVolumeRebuildRequest
+	if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+
+	offset, limit, err := parsePage(vars)
+	if err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+
+	var list []scheduler.PsqlBucketImportS3
+	if err = scheduler.GetPDB().Model(scheduler.PsqlBucketImportS3{}).Order("id desc").Offset(offset).Limit(limit).Find(&list).Error; err != nil {
+		writeWebErrorResponse(w, err)
+		return
+	}
+
+	total := len(list)
+	if total < limit {
+		total += offset
+	} else {
+		var count int64
+		if err := scheduler.GetPDB().Model(scheduler.PsqlBucketImportS3{}).Scan(&count).Error; err != nil {
+			logs.GetLogger().Error(err)
+			writeWebErrorResponse(w, err)
+			return
+		}
+		total = int(count)
+	}
+
+	var histories []*ImportHistory
+	for _, imp := range list {
+		histories = append(histories, &ImportHistory{
+			Bucket:   imp.BucketName,
+			Object:   "",
+			Progress: imp.Progress,
+			Status:   imp.Status,
+		})
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(SendResponse{Status: SuccessResponseStatus})
+	w.Write(b)
+}
+
 func (web *webAPIHandlers) S3Import(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "S3Import")
 	// check authorization
@@ -8665,8 +8720,10 @@ type S3ImportReq struct {
 // Backup makes backups for objects
 func (web *webAPIHandlers) Backup(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "Backup")
-
-	claims, owner, authErr := webRequestAuthenticate(r)
+	claims, permissionAllow, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
 	defer logger.AuditLog(ctx, w, r, claims.Map())
 
 	objectAPI := web.ObjectAPI()
@@ -8685,33 +8742,14 @@ func (web *webAPIHandlers) Backup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if authErr != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		sendResponse := AuthToken{Status: FailResponseStatus, Message: authErr.Error()}
-		errJson, _ := json.Marshal(sendResponse)
-		w.Write(errJson)
+	var req BackupReq
+	if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeWebErrorResponse(w, err)
+		logs.GetLogger().Error(err)
 		return
 	}
 
-	if !globalIAMSys.IsAllowed(iampolicy.Args{
-		AccountName:     claims.AccessKey,
-		Action:          iampolicy.GetObjectAction,
-		BucketName:      bucket,
-		ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
-		IsOwner:         owner,
-		ObjectName:      object,
-		Claims:          claims.Map(),
-	}) {
-		w.WriteHeader(http.StatusUnauthorized)
-		sendResponseIam := AuthToken{Status: FailResponseStatus, Message: "permission denied"}
-		errJsonIam, _ := json.Marshal(sendResponseIam)
-		w.Write(errJsonIam)
-		return
-	}
-
-	// Check if bucket is a reserved bucket name or invalid.
-	if isReservedOrInvalidBucket(bucket, false) {
-		writeWebErrorResponse(w, errInvalidBucketName)
+	if !permissionAllow(bucket, object) {
 		return
 	}
 
@@ -8728,11 +8766,6 @@ func (web *webAPIHandlers) Backup(w http.ResponseWriter, r *http.Request) {
 	}
 	defer gr.Close()
 
-	if err != nil && err != io.EOF {
-		w.Write([]byte(fmt.Sprintf("bad request: %s", err.Error())))
-		return
-	}
-
 	var onlineDealRequest OnlineDealRequest
 	err = json.NewDecoder(r.Body).Decode(&onlineDealRequest)
 	if err != nil && err != io.EOF {
@@ -8740,8 +8773,7 @@ func (web *webAPIHandlers) Backup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = backup(claims.AccessKey, bucket, object)
-	if err != nil {
+	if err = backup(claims.AccessKey, bucket, object, &req); err != nil {
 		writeWebErrorResponse(w, err)
 		return
 	}
@@ -8752,7 +8784,7 @@ func (web *webAPIHandlers) Backup(w http.ResponseWriter, r *http.Request) {
 
 const defaultJWTExpiryForDownload = 24 * time.Hour * 7
 
-func backup(accessKey, bucket, object string) (err error) {
+func backup(accessKey, bucket, object string, req *BackupReq) (err error) {
 	filWallet := config.GetUserConfig().Fs3WalletAddress
 	if filWallet == "" {
 		return errors.New("Please provide a wallet address for sending deals")
@@ -8778,7 +8810,7 @@ func backup(accessKey, bucket, object string) (err error) {
 	}
 	downloadURL += "?" + values.Encode()
 	client := scheduler.NewMetaClient(env.Get("SWAN_KEY", ""), env.Get("SWAN_TOKEN", ""), env.Get("META_SERVER", ""))
-	id, err := client.Backup(bucket+"-"+fi.Name(), filWallet, &scheduler.FileData{
+	id, err := client.Backup(fmt.Sprintf("%s-%s-%s", bucket, fi.Name(), time.Now().Format("20060102150405")), filWallet, &scheduler.FileData{
 		SourceName:  fi.Name(),
 		DataSize:    fi.Size(),
 		IsDirectory: fi.IsDir(),
@@ -8790,14 +8822,18 @@ func backup(accessKey, bucket, object string) (err error) {
 	}
 	// save data
 	return scheduler.GetPDB().Create(&scheduler.PsqlBucketObjectBackup{
-		UserAccessKey: accessKey,
-		BucketName:    bucket,
-		ObjectName:    object,
-		IsDir:         fi.IsDir(),
-		Size:          fi.Size(),
-		DownloadURL:   downloadURL,
-		Filepath:      sourceFilePath,
-		MsID:          id,
+		UserAccessKey:  accessKey,
+		BucketName:     bucket,
+		ObjectName:     object,
+		IsDir:          fi.IsDir(),
+		Size:           fi.Size(),
+		DownloadURL:    downloadURL,
+		Filepath:       sourceFilePath,
+		MsID:           id,
+		ProviderRegion: req.ProviderRegion,
+		Duration:       req.Duration,
+		VerifiedDeal:   req.VerifiedDeal,
+		FastRetrieval:  req.FastRetrieval,
 	}).Error
 }
 
@@ -8824,29 +8860,50 @@ func (web *webAPIHandlers) BackupInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	backups, err := backupInfo(bucket, object)
+	offset, limit, err := parsePage(vars)
+	if err != nil {
+		writeWebErrorResponse(w, err)
+		logs.GetLogger().Error(err)
+		return
+	}
+
+	backups, total, err := backupInfo(bucket, object, offset, limit)
 	if err != nil {
 		writeWebErrorResponse(w, err)
 		return
 	}
-	infoList := make([]*BackupInfo, 0, len(backups))
+	list := make([]*BackupInfo, 0, len(backups))
 	for _, backup := range backups {
-		infoList = append(infoList, &BackupInfo{
+		list = append(list, &BackupInfo{
 			Size:      backup.Size,
-			IpfsCID:   backup.PayloadCID,
+			DataCID:   backup.PayloadCID,
 			Providers: strings.Split(backup.Providers, ","),
 			CreatedAt: backup.CreatedAt.Unix(),
 		})
 	}
+
 	w.WriteHeader(http.StatusOK)
-	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: infoList})
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: DataWithCount{
+		Total: total,
+		List:  list,
+	}})
 	w.Write(b)
 }
 
-func backupInfo(bucket, object string) (backups []*scheduler.PsqlBucketObjectBackup, err error) {
+func backupInfo(bucket, object string, offset, limit int) (backups []*scheduler.PsqlBucketObjectBackup, total int, err error) {
 	backup := scheduler.PsqlBucketObjectBackup{}
-	if err = scheduler.GetPDB().Model(backup).Where(backup).Find(&backups).Error; err != nil {
+	if err = scheduler.GetPDB().Model(backup).Where(backup).Offset(offset).Limit(limit).Find(&backups).Error; err != nil {
 		return
+	}
+	total = len(backups)
+	if total < limit {
+		total += offset
+	} else {
+		var count int64
+		if err = scheduler.GetPDB().Model(backup).Where(backup).Scan(&count).Error; err != nil {
+			return
+		}
+		total = int(count)
 	}
 	return
 }
@@ -8858,17 +8915,18 @@ type Response struct {
 }
 
 type BackupReq struct {
-	Bucket      string `json:"bucket"`
-	MinerRegion string `json:"miner_region"`
-	Duration    string `json:"duration"`
+	ProviderRegion string `json:"provider_region"`
+	Duration       int    `json:"duration"`
+	VerifiedDeal   bool   `json:"verified_deal"`
+	FastRetrieval  bool   `json:"fast_retrieval"`
 }
 
 type BackupInfo struct {
 	Size      int64    `json:"size"`
-	IpfsCID   string   `json:"ipfs_cid"`
+	DataCID   string   `json:"data_cid"`
 	Providers []string `json:"providers"`
 	CreatedAt int64    `json:"created_at"`
-	Duration  string   `json:"duration"`
+	Duration  int      `json:"duration"`
 	Status    int      `json:"status"`
 	StatusMsg string   `json:"status_msg"`
 }
@@ -8884,9 +8942,11 @@ type RebuildInfo struct {
 	PlanID      uint     `json:"plan_id"`
 	PlanName    string   `json:"plan_name"`
 	Providers   []string `json:"providers"`
-	PayloadCID  string   `json:"payload_cid"`
+	DataCID     string   `json:"data_cid"`
 	Status      int      `json:"status"`
 	DownloadURL string   `json:"download_url"`
+	CreatedAt   int64    `json:"created_at"`
+	UpdatedAt   int64    `json:"updated_at"`
 }
 
 func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request) {
@@ -9018,15 +9078,16 @@ func (web *webAPIHandlers) RebuildObjectInfo(w http.ResponseWriter, r *http.Requ
 		PlanID:      rebuild.PlanID,
 		PlanName:    rebuild.PlanName,
 		Providers:   data.Providers,
-		PayloadCID:  data.PayloadCID,
+		DataCID:     data.PayloadCID,
 		Status:      data.Status,
 		DownloadURL: data.PayloadURL,
+		CreatedAt:   data.CreatedAt,
+		UpdatedAt:   rebuild.UpdatedAt.Unix(),
 	}})
 	w.Write(b)
 }
 
 func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Request) {
-	const defaulePageSize, limit = 10, 20
 	ctx := newContext(r, w, "RebuildList")
 	claims, permissionAllow, err := web.verify(w, r)
 	if err != nil {
@@ -9037,28 +9098,32 @@ func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	vars := mux.Vars(r)
-	pageNo, err := strconv.ParseUint(vars["page_no"], 10, 64)
+	offset, limit, err := parsePage(vars)
 	if err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
 		return
-	}
-	pageSize, err := strconv.ParseUint(vars["page_size"], 10, 64)
-	if err != nil {
-		logs.GetLogger().Error(err)
-		writeWebErrorResponse(w, err)
-		return
-	}
-	if pageSize >= limit {
-		pageSize = limit
 	}
 	// query backup
 	db := scheduler.GetPDB()
 	var rebuilds []*scheduler.PsqlBucketObjectRebuild
-	if err := db.Model(scheduler.PsqlBucketObjectRebuild{}).Offset(int(pageNo * pageSize)).Limit(int(pageSize)).Find(&rebuilds).Error; err != nil {
+	if err := db.Model(scheduler.PsqlBucketObjectRebuild{}).Offset(offset).Limit(limit).Find(&rebuilds).Error; err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
 		return
+	}
+
+	total := len(rebuilds)
+	if total < limit {
+		total += offset
+	} else {
+		var count int64
+		if err := db.Model(scheduler.PsqlBucketObjectRebuild{}).Count(&count).Error; err != nil {
+			logs.GetLogger().Error(err)
+			writeWebErrorResponse(w, err)
+			return
+		}
+		total = int(count)
 	}
 
 	list := make([]*RebuildInfo, 0, len(rebuilds))
@@ -9069,15 +9134,24 @@ func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Requ
 			PlanID:      rebuild.PlanID,
 			PlanName:    rebuild.PlanName,
 			Providers:   strings.Split(rebuild.Providers, ","),
-			PayloadCID:  rebuild.PayloadCID,
+			DataCID:     rebuild.PayloadCID,
 			Status:      rebuild.Status,
 			DownloadURL: rebuild.PayloadURL,
+			CreatedAt:   rebuild.CreatedAt.Unix(),
+			UpdatedAt:   rebuild.UpdatedAt.Unix(),
 		})
 	}
 
 	w.WriteHeader(http.StatusOK)
-	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: list})
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: DataWithCount{
+		Total: total,
+		List:  list,
+	}})
 	w.Write(b)
+}
+
+type BucketTab struct {
+	Bucket string `json:"bucket"`
 }
 
 func (web *webAPIHandlers) ListArchiveBuckets(w http.ResponseWriter, r *http.Request) {
@@ -9088,22 +9162,53 @@ func (web *webAPIHandlers) ListArchiveBuckets(w http.ResponseWriter, r *http.Req
 	}
 	defer logger.AuditLog(ctx, w, r, claims.Map())
 
-	db := scheduler.GetPDB()
-	var buckets []string
-	if err := db.Model(scheduler.PsqlBucketObjectRemove{}).Select("bucket_name").Distinct("bucket_name").Scan(&buckets).Error; err != nil {
+	vars := mux.Vars(r)
+	offset, limit, err := parsePage(vars)
+	if err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
 		return
 	}
-	perBuckets := make([]string, 0, len(buckets))
+
+	db := scheduler.GetPDB()
+	var buckets []string
+	if err := db.Model(scheduler.PsqlBucketObjectRemove{}).Select("bucket_name").Distinct("bucket_name").Offset(offset).Limit(limit).Scan(&buckets).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	list := make([]*BucketTab, 0, len(buckets))
 	for _, bucket := range buckets {
 		if permissionAllow(bucket, "") {
-			perBuckets = append(perBuckets, bucket)
+			list = append(list, &BucketTab{
+				Bucket: bucket,
+			})
 		}
 	}
-	perBuckets = append(perBuckets, "Other")
+
+	total := len(list)
+	if total < limit {
+		total += offset
+	} else {
+		var count int64
+		if err := db.Model(scheduler.PsqlBucketObjectRebuild{}).Count(&count).Error; err != nil {
+			logs.GetLogger().Error(err)
+			writeWebErrorResponse(w, err)
+			return
+		}
+		total = int(count)
+	}
+	if len(list) < limit {
+		list = append(list, &BucketTab{
+			Bucket: "Other",
+		})
+	}
+
 	w.WriteHeader(http.StatusOK)
-	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: perBuckets})
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: DataWithCount{
+		Total: len(list),
+		List:  list,
+	}})
 	w.Write(b)
 }
 
@@ -9133,31 +9238,33 @@ func (web *webAPIHandlers) ListArchiveObjects(w http.ResponseWriter, r *http.Req
 	for _, obj := range removeObjs {
 		if permissionAllow(obj.BucketName, "") {
 			list = append(list, &ArchiveRemoveObject{
-				ID:          obj.ID,
-				BucketName:  bucket,
-				FileName:    obj.ObjectName,
-				DateRemoved: obj.CreatedAt.Unix(),
-				DataCID:     obj.PayloadCID,
-				DueDate:     "",
-				Status:      0,
-				CanRebuild:  false,
+				ID:         obj.ID,
+				Bucket:     bucket,
+				FileName:   obj.ObjectName,
+				RemovedAt:  obj.CreatedAt.Unix(),
+				DataCID:    obj.PayloadCID,
+				CanRebuild: obj.BackUpID != 0,
 			})
 		}
 	}
 	w.WriteHeader(http.StatusOK)
-	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: list})
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: DataWithCount{
+		Total: len(list),
+		List:  list,
+	}})
 	w.Write(b)
 }
 
 type ArchiveRemoveObject struct {
-	ID          uint   `json:"id"`
-	BucketName  string `json:"bucket_name"`
-	FileName    string `json:"file_name"`
-	DateRemoved int64  `json:"date_removed"`
-	DataCID     string `json:"data_cid"`
-	DueDate     string `json:"due_date"`
-	Status      int    `json:"status"`
-	CanRebuild  bool   `json:"can_rebuild"`
+	ID         uint   `json:"id"`
+	Bucket     string `json:"bucket"`
+	FileName   string `json:"file_name"`
+	DataCID    string `json:"data_cid"`
+	DueAt      int64  `json:"due_at"`
+	RemovedAt  int64  `json:"removed_at"`
+	Status     int    `json:"status"`
+	StatusMsg  string `json:"status_msg"`
+	CanRebuild bool   `json:"can_rebuild"`
 }
 
 func (web *webAPIHandlers) verify(w http.ResponseWriter, r *http.Request) (claims *jwt.MapClaims, permissionAllow func(bucket, object string) bool, err error) {
@@ -9193,4 +9300,26 @@ func (web *webAPIHandlers) verify(w http.ResponseWriter, r *http.Request) (claim
 		}
 		return true
 	}, nil
+}
+
+func parsePage(vars map[string]string) (offset int, limit int, err error) {
+	no, err := strconv.ParseUint(vars["page_no"], 10, 64)
+	if err != nil {
+		return
+	}
+	size, err := strconv.ParseUint(vars["page_size"], 10, 64)
+	if err != nil {
+		return
+	}
+	if size == 0 {
+		size = 10
+	} else if size > 20 {
+		size = 20
+	}
+	return int(no * size), int(size), nil
+}
+
+type DataWithCount struct {
+	Total int         `json:"total"`
+	List  interface{} `json:"list"`
 }

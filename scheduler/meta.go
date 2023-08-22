@@ -159,4 +159,5 @@ type RebuildResp struct {
 	PayloadURL string   `json:"payload_url"`
 	Providers  []string `json:"providers"`
 	DueAt      int64    `json:"due_at"`
+	CreatedAt  int64    `json:"created_at"`
 }

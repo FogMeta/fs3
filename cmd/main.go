@@ -172,9 +172,7 @@ func Main(args []string) {
 	initConfigAndLog()
 	initUserConfig(sysconfig.GetSysConfig().StandAlone)
 	scheduler.Init()
-	scheduler.SendDealScheduler()
 	scheduler.BackupScheduler()
-	scheduler.RebuildScheduler()
 	scheduler.ImportS3Scheduler()
 	scheduler.BackupSyncScheduler()
 

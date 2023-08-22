@@ -120,20 +120,32 @@ func ImportFromS3Bucket(restartPtr *bool) (err error) {
 	defer manager.Close()
 
 	var objs []*minio.ObjectInfo
+	var totalSize int64
 	for info := range objects {
 		if info.Err != nil {
 			logs.GetLogger().Infof("%s get object error: %v", s3.BucketName, info.Err)
 			continue
 		}
-		if co, ok := mObjs[info.Key]; ok && co.Size == info.Size {
-			logs.GetLogger().Infof("%s %s already synced %s,skip", s3.BucketName, info.Key, s3.TargetBucket)
-			logs.GetLogger().Infof("%s %s pre version: %s,now version: %s", s3.BucketName, info.Key, info.VersionID, co.VersionID)
-			continue
-		}
 
 		obj := info
 		objs = append(objs, &obj)
-		manager.Send(&obj)
+		totalSize += info.Size
+	}
+
+	progress := s3.Progress
+	var sendSize int64
+	for _, info := range objs {
+		sendSize += info.Size
+		pg := int(float64(sendSize) / float64(totalSize) * 100)
+		if pg > progress {
+			pdb.Model(s3).Updates(PsqlBucketImportS3{Progress: pg})
+			progress = pg
+		}
+		if co, ok := mObjs[info.Key]; ok && co.Size == info.Size {
+			logs.GetLogger().Infof("%s %s already synced %s,skip", s3.BucketName, info.Key, s3.TargetBucket)
+			continue
+		}
+		manager.Send(info)
 	}
 	manager.WaitDone()
 
@@ -151,7 +163,7 @@ func ImportFromS3Bucket(restartPtr *bool) (err error) {
 	} else {
 		return nil
 	}
-	return pdb.Model(s3).Updates(PsqlBucketImportS3{Status: s3.Status}).Error
+	return pdb.Model(s3).Updates(PsqlBucketImportS3{Status: s3.Status, Progress: 100}).Error
 }
 
 type PsqlBucketImportS3 struct {
@@ -278,26 +290,30 @@ func (sm *syncManager) sync(ctx context.Context, info *minio.ObjectInfo) error {
 }
 
 type PsqlBucketObjectBackup struct {
-	ID            uint `gorm:"primarykey"`
-	UserAccessKey string
-	BucketName    string
-	ObjectName    string
-	IsDir         bool
-	Size          int64
-	VersionID     string `gorm:"column:version_id"`
-	DownloadURL   string `gorm:"column:download_url"`
-	Filepath      string
-	PayloadCID    string `gorm:"column:payload_cid"`
-	PayloadURL    string `gorm:"column:payload_url"`
-	MsID          int64  `gorm:"column:ms_id"`
-	PlanID        uint   `gorm:"column:plan_id"`
-	PlanName      string `gorm:"column:plan_name"`
-	Providers     string
-	Status        int
-	StatusMsg     string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	DeletedAt     gorm.DeletedAt `gorm:"index"`
+	ID             uint `gorm:"primarykey"`
+	UserAccessKey  string
+	BucketName     string
+	ObjectName     string
+	IsDir          bool
+	Size           int64
+	VersionID      string `gorm:"column:version_id"`
+	DownloadURL    string `gorm:"column:download_url"`
+	Filepath       string
+	ProviderRegion string
+	Duration       int
+	VerifiedDeal   bool
+	FastRetrieval  bool
+	PayloadCID     string `gorm:"column:payload_cid"`
+	PayloadURL     string `gorm:"column:payload_url"`
+	MsID           int64  `gorm:"column:ms_id"`
+	PlanID         uint   `gorm:"column:plan_id"`
+	PlanName       string `gorm:"column:plan_name"`
+	Providers      string
+	Status         int
+	StatusMsg      string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	DeletedAt      gorm.DeletedAt `gorm:"index"`
 }
 
 type PsqlBucketObjectBackupSlice struct {
