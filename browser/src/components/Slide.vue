@@ -199,7 +199,6 @@ export default {
             return this.$store.state.user.email
         },
         noMore () {
-            console.log(this.archivesList.length, this.parmaRebuild.total, this.archivesList.length >= this.parmaRebuild.total)
             return this.archivesList.length >= this.parmaRebuild.total
         },
         disabled () {

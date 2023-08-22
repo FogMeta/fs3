@@ -478,7 +478,6 @@ export default {
   },
   computed: {
     noMore () {
-      console.log(this.importData.length, this.parmaImport.total, this.importData.length >= this.parmaImport.total)
       return this.importData.length >= this.parmaImport.total
     },
     disabled () {
