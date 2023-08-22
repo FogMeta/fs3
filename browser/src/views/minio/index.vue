@@ -24,6 +24,36 @@
       <ul class="feh-actions">
         <li>
           <div class="dropdown btn-group">
+            <el-popover placement="bottom" width="400" trigger="click">
+              <div class="folder">
+                <div class="folder_style" v-for="(list, l) in importData" :key="l">
+                  <div class="load_cont">
+                    <p>{{list.bucket}}
+                      <el-link type="success" v-if="list.status === 1" disabled>
+                        <small class="status">Success</small>
+                      </el-link>
+                      <el-link v-else-if="list.status === 0" disabled>
+                        <small class="status">Ready</small>
+                      </el-link>
+                      <el-link v-else type="danger" disabled>
+                        <small class="status">Failed</small>
+                      </el-link>
+                    </p>
+                    <p style="color:#999">
+                      <small>Object: /{{list.object}}</small>
+                    </p>
+                  </div>
+                  <el-progress :color="list.status === -1?'#f56c6c':'#4d75ff'" :percentage="list.progress"></el-progress>
+                </div>
+              </div>
+              <button type="button" class="btn btn-default pcIcon" slot="reference">
+                <i class=" el-icon-download"></i>
+              </button>
+            </el-popover>
+          </div>
+        </li>
+        <li>
+          <div class="dropdown btn-group">
             <button type="button" class="btn btn-default pcIcon" @click.stop="signBtn">
               <i class="iconfont icon-ziyuan"></i>
             </button>
@@ -87,7 +117,7 @@
 
     <div class="import-style">
       <el-popover placement="top-start" width="200" trigger="hover" content="Import S3 Bucket">
-        <el-button type="primary" slot="reference" @click="dialogImportVisible = true">Import</el-button>
+        <el-button type="primary" plain slot="reference" @click="dialogImportVisible = true">Import</el-button>
       </el-popover>
     </div>
 
@@ -100,27 +130,6 @@
                 <template slot-scope="scope">
                   {{exChangeList[scope.$index].data.timeStamp}}
                   <!-- {{ props.row.date }} -->
-                </template>
-              </el-table-column>
-              <el-table-column prop="data.minerId" label="W3SS ID"></el-table-column>
-              <el-table-column prop="data.price" label="Price">
-                <template slot-scope="scope">
-                  {{exChangeList[scope.$index].data.price}} FIL
-                </template>
-              </el-table-column>
-              <el-table-column prop="data.dealCid" label="Deal CID">
-                <template slot-scope="scope">
-                  <div class="hot-cold-box">
-                    <el-popover placement="top" trigger="hover" v-model="exChangeList[scope.$index].data.visible">
-                      <div class="upload_form_right">
-                        <p>{{exChangeList[scope.$index].data.dealCid}}</p>
-                      </div>
-                      <el-button slot="reference" @click="copyLink(exChangeList[scope.$index].data.dealCid)">
-                        <p>
-                          <i class="el-icon-document-copy"></i>{{exChangeList[scope.$index].data.dealCid}}</p>
-                      </el-button>
-                    </el-popover>
-                  </div>
                 </template>
               </el-table-column>
               <el-table-column prop="data.dataCid" label="Data CID">
@@ -139,6 +148,14 @@
                 </template>
               </el-table-column>
               <el-table-column prop="data.duration" label="Duration"></el-table-column>
+              <el-table-column prop="data.providers" label="Storage Providers">
+                <template slot-scope="scope">
+                  <div class="hot-cold-box">
+                    <span v-for="miner in data.providers" :key="miner">{{miner}} &nbsp;&nbsp;</span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="data.status" label="Status"></el-table-column>
             </el-table>
           </template>
         </el-table-column>
@@ -341,6 +358,7 @@
 <script>
 import axios from 'axios'
 import Moment from 'moment'
+import QS from 'qs'
 import shareDialog from '@/components/shareDialog.vue';
 import changePassword from '@/components/changePassword.vue';
 // import NCWeb3 from "@/utils/web3";
@@ -400,7 +418,7 @@ export default {
         num_Minutes: 0,
       },
       postAdress: '',
-      sendApi: 2,
+      sendApi: 1,
       expands: [],
       getRowKeys: (row) => {
         return row.name
@@ -427,17 +445,27 @@ export default {
         endpoint: [
           { required: true, message: 'Please fill in this field', trigger: 'blur' }
         ],
-        accessKeyID: [
-          { required: true, message: 'Please fill in this field', trigger: 'blur' }
-        ],
-        secretAccessKey: [
-          { required: true, message: 'Please fill in this field', trigger: 'blur' }
-        ],
         name: [
           { required: true, message: 'Please fill in this field', trigger: 'blur' }
         ]
       },
-      loading: false
+      loading: false,
+      importData: [],
+      parmaImport: {
+        limit: 10,
+        offset: 1,
+        total: 0,
+      },
+      loadImport: false
+    }
+  },
+  computed: {
+    noMore () {
+      console.log(this.importData.length, this.parmaImport.total, this.importData.length >= this.parmaImport.total)
+      return this.importData.length >= this.parmaImport.total
+    },
+    disabled () {
+      return this.loadImport || this.noMore
     }
   },
   components: {
@@ -527,7 +555,7 @@ export default {
       let _this = this
       _this.exChangeList = []
 
-      let postUrl = _this.data_api + `/minio/retrieve/` + _this.currentBucket + `/` + name
+      let postUrl = _this.data_api + `/minio/backup/` + _this.currentBucket + `/` + name
       axios.get(postUrl, {
         headers: {
           'Authorization': "Bearer " + _this.$store.getters.accessToken
@@ -1113,6 +1141,34 @@ export default {
         }
       }
       return version;
+    },
+    importListData () {
+      let _this = this
+      let postUrl = _this.data_api + `minio/bucket/${_this.currentBucket}/import`
+      if (_this.parmaImport.offset === 1) _this.importData = []
+      let offsetRebuild = _this.parmaImport.offset > 0 ? _this.parmaImport.offset - 1 : 0;
+      let paramsRebuild = {
+        "page_no": offsetRebuild,   //default as 0 
+        "page_size": _this.parmaImport.limit   //default as 10
+      }
+
+      axios.get(`${postUrl}?${QS.stringify(paramsRebuild)}`, {        headers: {
+          'Authorization': "Bearer " + _this.$store.getters.accessToken
+        }      }).then((response) => {
+        let json = response.data
+        if (json.status == 'success') {
+          _this.parmaImport.total = json.data.total
+          _this.importData = _this.importData.concat(json.data.list)
+        } else if (json.message) _this.$message.error(json.message);
+      }).catch(function (error) {
+        console.log(error)
+      });
+      this.loadImport = false
+    },
+    load () {
+      this.loadImport = true
+      this.importListData()
+      this.parmaImport.offset += 1
     }
   },
   watch: {
@@ -1122,6 +1178,7 @@ export default {
     },
     'currentBucket': function () {
       let _this = this
+      _this.load()
       _this.currentBucketAll = _this.currentBucket.split('/')
     },
     'slideListClick': function () {
@@ -1434,6 +1491,8 @@ export default {
       }
     }
     .feh-actions {
+      display: flex;
+      align-items: stretch;
       list-style: none;
       padding: 0;
       margin: 0;
@@ -1442,6 +1501,7 @@ export default {
       top: 30px;
       z-index: 22;
       .btn-group > button,
+      .btn,
       > a {
         display: block;
         height: 45px;
@@ -1470,6 +1530,7 @@ export default {
       }
       li {
         width: 100%;
+        margin: 0 0 0 10px;
         display: inline-block;
         text-align: right;
         vertical-align: top;
@@ -2137,4 +2198,51 @@ export default {
   }
 }
 </style>
-
+<style lang="scss">
+.folder {
+  width: calc(100% + 24px);
+  margin-left: -12px;
+  max-height: 200px;
+  overflow-y: scroll;
+  .folder_style {
+    padding: 0.1rem 5%;
+    .load_cont {
+      width: 100%;
+      p {
+        width: 100%;
+        text-align: left;
+        color: #000;
+        line-height: 20px;
+        max-height: none;
+        white-space: normal;
+        display: block;
+        small {
+          &.status {
+            padding: 0 5px;
+            margin: 0 0 0 5px;
+            border: 1px solid #e0e0e0;
+            border-radius: 20px;
+          }
+          line-height: 1;
+        }
+      }
+    }
+    .el-progress /deep/ {
+      margin: 0.1rem 0 0;
+      .el-progress__text {
+        font-size: 12px !important;
+      }
+    }
+  }
+  &::-webkit-scrollbar-track {
+    background: #fff;
+  }
+  &::-webkit-scrollbar {
+    width: 5px;
+    background: #fff;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: #ccc;
+  }
+}
+</style>
