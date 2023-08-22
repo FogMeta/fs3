@@ -24,7 +24,7 @@ const (
 
 func ImportS3Scheduler() {
 	c := cron.New()
-	interval := "@every 1h"
+	interval := "@every 10m"
 	restart := true
 	err := c.AddFunc(interval, func() {
 		logs.GetLogger().Println("---------- import from s3 bucket scheduler is running at " + time.Now().Format("2006-01-02 15:04:05") + " ----------")
@@ -37,7 +37,6 @@ func ImportS3Scheduler() {
 		logs.GetLogger().Error(err)
 		return
 	}
-	go ImportFromS3Bucket(nil)
 	c.Start()
 }
 

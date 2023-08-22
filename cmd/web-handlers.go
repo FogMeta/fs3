@@ -8584,7 +8584,7 @@ func (web *webAPIHandlers) S3ImportList(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	offset, limit, err := parsePage(vars)
+	offset, limit, err := parsePage(r)
 	if err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
@@ -8862,7 +8862,7 @@ func (web *webAPIHandlers) BackupInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	offset, limit, err := parsePage(vars)
+	offset, limit, err := parsePage(r)
 	if err != nil {
 		writeWebErrorResponse(w, err)
 		logs.GetLogger().Error(err)
@@ -8910,6 +8910,66 @@ func backupInfo(bucket, object string, offset, limit int) (backups []*scheduler.
 	return
 }
 
+func (web *webAPIHandlers) BackupStat(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "BackupStat")
+	claims, _, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	db := scheduler.GetPDB()
+	var stat BackupStat
+	for _, status := range []int{-1, 0, 1} {
+		var count int64
+		if err = db.Model(scheduler.PsqlBucketObjectBackup{}).Where("status = ?", status).Scan(&count).Error; err != nil {
+			writeWebErrorResponse(w, err)
+			return
+		}
+		if status == -1 {
+			stat.FailedCnt++
+		} else if status == 0 {
+			stat.RunningCnt++
+		} else {
+			stat.CompletedCnt++
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: stat})
+	w.Write(b)
+}
+
+func (web *webAPIHandlers) RebuildStat(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "RebuildStat")
+	claims, _, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	db := scheduler.GetPDB()
+	var stat BackupStat
+	for _, status := range []int{-1, 0, 1} {
+		var count int64
+		if err = db.Model(scheduler.PsqlBucketObjectRebuild{}).Where("status = ?", status).Scan(&count).Error; err != nil {
+			writeWebErrorResponse(w, err)
+			return
+		}
+		if status == -1 {
+			stat.FailedCnt++
+		} else if status == 0 {
+			stat.RunningCnt++
+		} else {
+			stat.CompletedCnt++
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: stat})
+	w.Write(b)
+}
+
 type Response struct {
 	Data    interface{} `json:"data"`
 	Status  string      `json:"status"`
@@ -8949,6 +9009,12 @@ type RebuildInfo struct {
 	DownloadURL string   `json:"download_url"`
 	CreatedAt   int64    `json:"created_at"`
 	UpdatedAt   int64    `json:"updated_at"`
+}
+
+type BackupStat struct {
+	RunningCnt   int `json:"running_cnt"`
+	CompletedCnt int `json:"completed_cnt"`
+	FailedCnt    int `json:"failed_cnt"`
 }
 
 func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request) {
@@ -9099,8 +9165,8 @@ func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Requ
 	if !permissionAllow("", "") {
 		return
 	}
-	vars := mux.Vars(r)
-	offset, limit, err := parsePage(vars)
+
+	offset, limit, err := parsePage(r)
 	if err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
@@ -9164,8 +9230,7 @@ func (web *webAPIHandlers) ListArchiveBuckets(w http.ResponseWriter, r *http.Req
 	}
 	defer logger.AuditLog(ctx, w, r, claims.Map())
 
-	vars := mux.Vars(r)
-	offset, limit, err := parsePage(vars)
+	offset, limit, err := parsePage(r)
 	if err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
@@ -9224,7 +9289,7 @@ func (web *webAPIHandlers) ListArchiveObjects(w http.ResponseWriter, r *http.Req
 
 	vars := mux.Vars(r)
 	bucket := vars["bucket"]
-	offset, limit, err := parsePage(vars)
+	offset, limit, err := parsePage(r)
 	if err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
@@ -9261,7 +9326,7 @@ func (web *webAPIHandlers) ListArchiveObjects(w http.ResponseWriter, r *http.Req
 		total += offset
 	} else {
 		var count int64
-		if err := db.Model(scheduler.PsqlBucketObjectRebuild{}).Count(&count).Error; err != nil {
+		if err := db.Model(remove).Where(remove).Count(&count).Error; err != nil {
 			logs.GetLogger().Error(err)
 			writeWebErrorResponse(w, err)
 			return
@@ -9324,10 +9389,10 @@ func (web *webAPIHandlers) verify(w http.ResponseWriter, r *http.Request) (claim
 	}, nil
 }
 
-func parsePage(vars map[string]string) (offset int, limit int, err error) {
-	logs.GetLogger().Error(vars)
+func parsePage(r *http.Request) (offset int, limit int, err error) {
+	queries := r.URL.Query()
 	var no uint64
-	pn := vars["page_no"]
+	pn := queries.Get("page_no")
 	if pn != "" {
 		no, err = strconv.ParseUint(pn, 10, 64)
 		if err != nil {
@@ -9336,7 +9401,7 @@ func parsePage(vars map[string]string) (offset int, limit int, err error) {
 	}
 
 	var size uint64
-	ps := vars["page_size"]
+	ps := queries.Get("page_size")
 	if ps != "" {
 		size, err = strconv.ParseUint(ps, 10, 64)
 		if err != nil {
@@ -9355,4 +9420,202 @@ func parsePage(vars map[string]string) (offset int, limit int, err error) {
 type DataWithCount struct {
 	Total int         `json:"total"`
 	List  interface{} `json:"list"`
+}
+
+func (web *webAPIHandlers) BackupPlanAdd(w http.ResponseWriter, r *http.Request) {
+	logs.GetLogger().Info("BackupPlanAdd")
+	ctx := newContext(r, w, "ListArchiveObjects")
+	claims, _, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	var req BackupPlanAddReq
+	err = json.NewDecoder(r.Body).Decode(&req)
+	if err != nil && err != io.EOF {
+		w.Write([]byte(fmt.Sprintf("bad request: %s", err.Error())))
+		return
+	}
+	db := scheduler.GetPDB()
+	if err := db.Create(&scheduler.PsqlBucketBackupPlan{
+		UserAccessKey:  claims.AccessKey,
+		Name:           req.Name,
+		Bucket:         req.Bucket,
+		Interval:       req.Interval,
+		ProviderRegion: req.ProviderRegion,
+		Duration:       req.Duration,
+		VerifiedDeal:   req.VerifiedDeal,
+		FastRetrieval:  req.FastRetrieval,
+	}).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus})
+	w.Write(b)
+}
+
+func (web *webAPIHandlers) BackupPlanList(w http.ResponseWriter, r *http.Request) {
+	logs.GetLogger().Info("BackupPlanList")
+	ctx := newContext(r, w, "ListArchiveObjects")
+	claims, _, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	offset, limit, err := parsePage(r)
+	if err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+
+	db := scheduler.GetPDB()
+	plan := scheduler.PsqlBucketBackupPlan{}
+	var plans []*scheduler.PsqlBucketBackupPlan
+	if err := db.Model(plan).Offset(offset).Limit(limit).Find(&plans).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+
+	list := make([]*BackupPlanInfo, 0, len(plans))
+	for _, plan := range plans {
+		list = append(list, &BackupPlanInfo{
+			ID:            plan.ID,
+			Name:          plan.Name,
+			Bucket:        plan.Bucket,
+			Interval:      plan.Interval,
+			Duration:      plan.Duration,
+			VerifiedDeal:  plan.VerifiedDeal,
+			FastRetrieval: plan.FastRetrieval,
+			Status:        plan.Status,
+			StatusMsg:     scheduler.StatusMsgAble[plan.Status],
+		})
+	}
+
+	total := len(plans)
+	if total < limit {
+		total += offset
+	} else {
+		var count int64
+		if err := db.Model(plan).Count(&count).Error; err != nil {
+			logs.GetLogger().Error(err)
+			writeWebErrorResponse(w, err)
+			return
+		}
+		total = int(count)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: DataWithCount{
+		Total: total,
+		List:  list,
+	}})
+	w.Write(b)
+}
+
+func (web *webAPIHandlers) BackupPlanUpdate(w http.ResponseWriter, r *http.Request) {
+	logs.GetLogger().Info("BackupPlanUpdate")
+	ctx := newContext(r, w, "ListArchiveObjects")
+	claims, _, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	var req BackupPlanUpdateReq
+	err = json.NewDecoder(r.Body).Decode(&req)
+	if err != nil && err != io.EOF {
+		w.Write([]byte(fmt.Sprintf("bad request: %s", err.Error())))
+		return
+	}
+
+	db := scheduler.GetPDB()
+	vars := mux.Vars(r)
+	id := vars["id"]
+	var plan scheduler.PsqlBucketBackupPlan
+	if err := db.First(&plan, id).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	var cols []string
+	if req.Name != nil {
+		cols = append(cols, "name")
+		plan.Name = *req.Name
+	}
+
+	if req.Bucket != nil {
+		cols = append(cols, "bucket")
+		plan.Bucket = *req.Bucket
+	}
+
+	if req.Interval != nil {
+		cols = append(cols, "interval")
+		plan.Interval = *req.Interval
+	}
+	if req.Duration != nil {
+		cols = append(cols, "duration")
+		plan.Duration = *req.Duration
+	}
+	if req.VerifiedDeal != nil {
+		cols = append(cols, "verified_deal")
+		plan.VerifiedDeal = *req.VerifiedDeal
+	}
+	if req.FastRetrieval != nil {
+		cols = append(cols, "fast_retrieval")
+		plan.FastRetrieval = *req.FastRetrieval
+	}
+	if req.ProviderRegion != nil {
+		cols = append(cols, "provider_region")
+		plan.ProviderRegion = *req.ProviderRegion
+	}
+
+	if len(cols) > 0 {
+		db.Model(plan).Select(cols).Updates(plan)
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus})
+	w.Write(b)
+}
+
+type BackupPlanAddReq struct {
+	Name           string `json:"name"`
+	Bucket         string `json:"bucket"`
+	Interval       int    `json:"interval"`
+	Duration       int    `json:"duration"`
+	VerifiedDeal   bool   `json:"verified_deal"`
+	FastRetrieval  bool   `json:"fast_retrieval"`
+	ProviderRegion string `json:"provider_region"`
+}
+
+type BackupPlanPutReq struct {
+	Status *int `json:"status"`
+}
+
+type BackupPlanInfo struct {
+	ID            int    `json:"id"`
+	Name          string `json:"name"`
+	Bucket        string `json:"bucket"`
+	Interval      int    `json:"interval"`
+	Duration      int    `json:"duration"`
+	VerifiedDeal  bool   `json:"verified_deal"`
+	FastRetrieval bool   `json:"fast_retrieval"`
+	Status        int    `json:"status"`
+	StatusMsg     string `json:"status_msg"`
+}
+
+type BackupPlanUpdateReq struct {
+	Name           *string `json:"name"`
+	Bucket         *string `json:"bucket"`
+	Interval       *int    `json:"interval"`
+	Duration       *int    `json:"duration"`
+	VerifiedDeal   *bool   `json:"verified_deal"`
+	FastRetrieval  *bool   `json:"fast_retrieval"`
+	ProviderRegion *string `json:"provider_region"`
+	Status         *int    `json:"status"`
 }
