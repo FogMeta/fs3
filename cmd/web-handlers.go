@@ -8885,12 +8885,17 @@ func (web *webAPIHandlers) BackupList(w http.ResponseWriter, r *http.Request) {
 		if backup.Duration == 0 || backup.Duration > DefaultBackupDuration {
 			backup.Duration = DefaultBackupDuration
 		}
+		providers := []string{}
+		if backup.Providers!= ""{
+			providers =strings.Split(backup.Providers, ",")
+		}
 		list = append(list, &BackupInfo{
 			ID:         backup.ID,
 			PlanName:   backup.PlanName,
+			Duration:   backup.Duration,
 			Size:       backup.Size,
 			DataCID:    backup.PayloadCID,
-			Providers:  strings.Split(backup.Providers, ","),
+			Providers:  providers,
 			CreatedAt:  backup.CreatedAt.Unix(),
 			UpdatedAt:  backup.UpdatedAt.Unix(),
 			Status:     backup.Status,
