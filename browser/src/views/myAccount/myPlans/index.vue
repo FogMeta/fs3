@@ -14,7 +14,7 @@
       </div>
       <div v-loading="loading" v-if="plan_list.length>0">
         <el-card class="box-card" v-for="(item, index) in plan_list" :key="index">
-          <div class="title">{{ item.Name }}</div>
+          <div class="title">{{ item.name }}</div>
           <div class="button">
             <div class="statusStyle" v-if="item.status_msg == 'Created'" style="color: #0a318e">
               {{ item.status_msg }}
@@ -55,7 +55,7 @@
       </div>
     </div>
 
-    <el-dialog :title="ruleForm.Name" custom-class="formStyle" :visible.sync="dialogVisible" :width="dialogWidth" :before-close="handleClose">
+    <el-dialog :title="ruleForm.name" custom-class="formStyle" :visible.sync="dialogVisible" :width="dialogWidth" :before-close="handleClose">
       <el-card class="box-card">
         <div class="statusStyle">
           <div class="list">
@@ -138,30 +138,38 @@ export default {
       _this.dialogVisible = false
       _this.dialogIndex = NaN
       _this.loading = true
-      let params = {
-        "status": type ? -1 : row.status == 1 ? 0 : 1
+
+      let update
+      let jsonObject = {
+        "status": row.status
       }
-
-      axios.post(`${_this.data_api}/minio/backup/plan/${row.id}`, params, {        headers: {
+      if (type) update = axios.delete(`${_this.data_api}/minio/backup/plan/${row.id}`, {
+        data: jsonObject,
+        headers: {
           'Authorization': "Bearer " + _this.$store.getters.accessToken
-        }      }).then((response) => {
-        let json = response.data
-        if (json.status == 'success') {
-          _this.ruleForm = json.data
-          _this.ruleForm.created_at = _this.ruleForm.created_at ? moment(new Date(parseInt(_this.ruleForm.created_at * 1000))).format("YYYY-MM-DD HH:mm:ss") : '-'
-          _this.ruleForm.updated_at = _this.ruleForm.updated_at ? moment(new Date(parseInt(_this.ruleForm.updated_at * 1000))).format("YYYY-MM-DD HH:mm:ss") : '-'
-          _this.ruleForm.last_at = _this.ruleForm.last_at ? moment(new Date(parseInt(_this.ruleForm.last_at * 1000))).format("YYYY-MM-DD HH:mm:ss") : '-'
-          _this.getData()
-        } else {
-          _this.$message.error(json.message);
-          _this.loading = false
-          return false
         }
+      })
+      else update = axios.put(`${_this.data_api}/minio/backup/plan/${row.id}`, jsonObject, {
+        headers: {
+          'Authorization': "Bearer " + _this.$store.getters.accessToken
+        }
+      })
 
-      }).catch(function (error) {
-        console.log(error);
-        _this.loading = false
-      });
+      update
+        .then((response) => {
+          let json = response.data
+          if (json.status == 'success') {
+            // _this.ruleForm = json.data
+            _this.getData()
+          } else {
+            _this.$message.error(json.message);
+            _this.loading = false
+            return false
+          }
+        }).catch(function (error) {
+          console.log(error);
+          _this.loading = false
+        });
 
     },
     sort (data) {
