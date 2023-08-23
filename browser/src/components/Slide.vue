@@ -67,7 +67,7 @@
                                 <router-link :to="{name: 'my_archives', params: {name: item.bucket}}">{{item.bucket}}</router-link>
                             </li>
                             <p v-if="loading" class="t">Loading...</p>
-                            <p v-if="noMore" class="t">No more</p>
+                            <p v-if="noMore && (archivesList && archivesList.length>10)" class="t">No more</p>
                         </ul>
                     </el-col>
 
@@ -199,7 +199,6 @@ export default {
             return this.$store.state.user.email
         },
         noMore () {
-            console.log(this.archivesList.length, this.parmaRebuild.total, this.archivesList.length >= this.parmaRebuild.total)
             return this.archivesList.length >= this.parmaRebuild.total
         },
         disabled () {

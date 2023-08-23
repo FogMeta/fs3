@@ -13,26 +13,26 @@
         <el-tab-pane label="Rebuild Jobs" name="rebuild_job"></el-tab-pane>
       </el-tabs>
       <el-table :data="tableData" v-loading="loading" stripe empty-text="No data" v-if="activeName == 'backup_job'">
-        <el-table-column prop="ID" label="Backup ID" width="100">
+        <el-table-column prop="id" label="Backup ID" width="100">
           <template slot-scope="scope">
-            {{ scope.row.ID }}
+            {{ scope.row.id }}
           </template>
         </el-table-column>
-        <el-table-column prop="Name" label="Backup Plan Name" width="180"></el-table-column>
-        <el-table-column prop="CreatedOn" label="Date Created" width="120">
+        <el-table-column prop="name" label="Backup Plan Name" width="180"></el-table-column>
+        <el-table-column prop="created_at" label="Date Created" width="120">
           <template slot-scope="scope">
-            {{ scope.row.CreatedOn }}
+            {{ scope.row.created_at || '-' }}
           </template>
         </el-table-column>
-        <el-table-column prop="PayloadCid" label="Data CID" min-width="200">
+        <el-table-column prop="data_cid" label="Data CID" min-width="200">
           <template slot-scope="scope">
             <div class="hot-cold-box">
               <el-popover placement="top" width="160" trigger="hover" v-model="scope.row.dataVisible">
                 <div class="upload_form_right">
-                  <p>{{scope.row.PayloadCid}}</p>
+                  <p>{{scope.row.data_cid}}</p>
                 </div>
-                <el-button slot="reference" @click="copyTextToClipboard(scope.row.PayloadCid)">
-                  <img src="@/assets/images/copy.png" alt=""> {{scope.row.PayloadCid}}
+                <el-button slot="reference" @click="copyTextToClipboard(scope.row.data_cid)">
+                  <img src="@/assets/images/copy.png" alt=""> {{scope.row.data_cid}}
                 </el-button>
               </el-popover>
             </div>
@@ -46,46 +46,41 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column prop="Duration" width="130">
+        <el-table-column prop="duration" width="130">
           <template slot="header" slot-scope="scope">
             <div class="tips">
               Duration
-              <br /> (Due date)
             </div>
           </template>
           <template slot-scope="scope">
-            <!-- {{ scope.row.Duration }} 
-              <br>
-              ({{ scope.row.duration_time }}) -->
-            {{scope.row.Duration/24/60/2}} days
-            <br> ({{ scope.row.duration_time }})
+            {{ scope.row.duration || '-' }}
           </template>
         </el-table-column>
-        <el-table-column prop="UpdatedOn" label="Last Updated" width="120">
+        <el-table-column prop="updated_at" label="Last Updated" width="120">
           <template slot-scope="scope">
-            {{ scope.row.UpdatedOn }}
+            {{ scope.row.updated_at || '-' }}
           </template>
         </el-table-column>
-        <el-table-column prop="Status" label="Status" width="140">
+        <el-table-column prop="status_msg" label="Status" width="140">
           <template slot-scope="scope">
-            <div class="statusStyle" v-if="scope.row.Status == 'Created'" style="color: #0a318e">
-              {{ scope.row.Status }}
+            <div class="statusStyle" v-if="scope.row.status_msg == 'Created'" style="color: #0a318e">
+              {{ scope.row.status_msg }}
             </div>
-            <div class="statusStyle" v-else-if="scope.row.Status == 'Running'" style="color: #ffb822">
-              {{ scope.row.Status }}
+            <div class="statusStyle" v-else-if="scope.row.status_msg == 'Running'" style="color: #ffb822">
+              {{ scope.row.status_msg }}
             </div>
-            <div class="statusStyle" v-else-if="scope.row.Status == 'Completed'" style="color: #1dc9b7">
-              {{ scope.row.Status }}
+            <div class="statusStyle" v-else-if="scope.row.status_msg == 'Completed'" style="color: #1dc9b7">
+              {{ scope.row.status_msg }}
             </div>
             <div class="statusStyle" v-else style="color: rgb(255, 184, 34)">
-              {{ scope.row.Status }}
+              {{ scope.row.status_msg }}
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="" label="" min-width="130">
+        <el-table-column prop="" label="Action" min-width="130">
           <template slot-scope="scope">
-            <el-button v-if="scope.row.Status != 'Completed'" type="info" @click="dialogDis=true">Rebuild Image</el-button>
-            <el-button v-else type="primary" @click="detailFun(scope.row)">Rebuild Image</el-button>
+            <el-button v-if="scope.row.status_msg != 'Completed'" type="info" @click="dialogDis=true">Rebuild</el-button>
+            <el-button v-else type="primary" @click="detailFun(scope.row)">Rebuild</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -97,19 +92,19 @@
         <el-table-column prop="data_cid" label="Data CID" min-width="160"></el-table-column>
         <el-table-column prop="created_at" label="Date Created" width="120"></el-table-column>
         <el-table-column prop="updated_at" label="Date Updated" width="120"></el-table-column>
-        <el-table-column prop="status" label="Status" width="140">
+        <el-table-column prop="status_msg" label="Status" width="140">
           <template slot-scope="scope">
-            <div class="statusStyle" v-if="scope.row.Status == 'Created'" style="color: #0a318e">
-              {{ scope.row.Status }}
+            <div class="statusStyle" v-if="scope.row.status_msg == 'Created'" style="color: #0a318e">
+              {{ scope.row.status_msg }}
             </div>
-            <div class="statusStyle" v-else-if="scope.row.Status == 'Running'" style="color: #ffb822">
-              {{ scope.row.Status }}
+            <div class="statusStyle" v-else-if="scope.row.status_msg == 'Running'" style="color: #ffb822">
+              {{ scope.row.status_msg }}
             </div>
-            <div class="statusStyle" v-else-if="scope.row.Status == 'Completed'" style="color: #1dc9b7">
-              {{ scope.row.Status }}
+            <div class="statusStyle" v-else-if="scope.row.status_msg == 'Completed'" style="color: #1dc9b7">
+              {{ scope.row.status_msg }}
             </div>
             <div class="statusStyle" v-else style="color: rgb(255, 184, 34)">
-              {{ scope.row.Status }}
+              {{ scope.row.status_msg }}
             </div>
           </template>
         </el-table-column>
@@ -296,7 +291,7 @@ export default {
     detailFun (row) {
       let _this = this
       _this.backupPlan.Name = row.Name
-      _this.backupPlan.ID = row.ID
+      _this.backupPlan.ID = row.id
       _this.dialogVisible = true
     },
     productName () {
@@ -312,7 +307,8 @@ export default {
     },
     handleClick (tab, event) {
       let _this = this
-      // console.log(tab, event);
+      if (tab.name === 'backup_job') _this.getData(1)
+      else _this.getData()
     },
     copyTextToClipboard (text) {
       let _this = this
@@ -346,7 +342,7 @@ export default {
       return false;
     },
     sort (data) {
-      return data.sort(function (a, b) { return a.ID - b.ID })
+      return data.sort(function (a, b) { return a.id - b.id })
     },
     backupChange (val) {
       this.parma.offset = val;
@@ -361,37 +357,37 @@ export default {
 
       if (type) {
         _this.loading = true
-        let postUrl = _this.data_api + `/minio/backup/retrieve/volume`
+        let postUrl = _this.data_api + `/minio/backup/`
         let offset = _this.parma.offset > 0 ? _this.parma.offset - 1 : _this.parma.offset;
         let params = {
-          "Offset": offset,   //default as 0 
-          "Limit": _this.parma.limit   //default as 10
+          "page_no": offset,   //default as 0 
+          "page_size": _this.parma.limit   //default as 10
         }
 
-        axios.post(postUrl, params, {          headers: {
+        axios.get(`${postUrl}?${QS.stringify(params)}`, {          headers: {
             // axios.get(`./static/data.json`, {headers: {
             'Authorization': "Bearer " + _this.$store.getters.accessToken
           }        }).then((response) => {
           let json = response.data
           if (json.status == 'success') {
-            _this.parma.total = json.data.totalVolumeBackupTasksCounts
-            _this.tableData = json.data.VolumeBackupJobs
+            _this.parma.total = json.data.total
+            _this.tableData = json.data.list
             _this.tableData.map(item => {
               item.visible = false
               item.dataVisible = false
-              item.duration_time =
-                item.Duration ?
-                  moment(new Date(parseInt((parseInt(item.Duration) * 30 + parseInt(1598306471)) * 1000))).format("YYYY-MM-DD HH:mm:ss")
+              item.duration =
+                item.duration ?
+                  moment(new Date(parseInt(parseInt(item.duration * 1000)))).format("YYYY-MM-DD HH:mm:ss")
                   :
                   '-'
-              item.CreatedOn =
-                item.CreatedOn ?
-                  moment(new Date(parseInt(item.CreatedOn / 1000))).format("YYYY-MM-DD HH:mm:ss")
+              item.created_at =
+                item.created_at ?
+                  moment(new Date(parseInt(item.created_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
                   :
                   '-'
-              item.UpdatedOn =
-                item.UpdatedOn ?
-                  moment(new Date(parseInt(item.UpdatedOn / 1000))).format("YYYY-MM-DD HH:mm:ss")
+              item.updated_at =
+                item.updated_at ?
+                  moment(new Date(parseInt(item.updated_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
                   :
                   '-'
             })
@@ -456,7 +452,7 @@ export default {
   },
   mounted () {
     // this.productName()
-    this.getData()
+    // this.getData()
     this.getData(1)
   },
   filters: {

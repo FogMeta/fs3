@@ -17,7 +17,7 @@
         </el-table-column>
         <el-table-column prop="removed_at" label="Date Removed" width="120">
           <template slot-scope="scope">
-            {{ scope.row.removed_at }}
+            {{ scope.row.removed_at || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="data_cid" label="Data CID" min-width="200">
@@ -41,22 +41,22 @@
             </div>
           </template>
           <template slot-scope="scope">
-            {{ scope.row.due_at }}
+            {{ scope.row.due_at || '-' }}
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="Status" width="140">
+        <el-table-column prop="status_msg" label="Status" width="140">
           <template slot-scope="scope">
-            <div class="statusStyle" v-if="scope.row.status == 'Created'" style="color: #0a318e">
-              {{ scope.row.status }}
+            <div class="statusStyle" v-if="scope.row.status_msg == 'Created'" style="color: #0a318e">
+              {{ scope.row.status_msg }}
             </div>
-            <div class="statusStyle" v-else-if="scope.row.status == 'Running'" style="color: #ffb822">
-              {{ scope.row.status }}
+            <div class="statusStyle" v-else-if="scope.row.status_msg == 'Running'" style="color: #ffb822">
+              {{ scope.row.status_msg }}
             </div>
-            <div class="statusStyle" v-else-if="scope.row.status == 'Completed'" style="color: #1dc9b7">
-              {{ scope.row.status }}
+            <div class="statusStyle" v-else-if="scope.row.status_msg == 'Completed'" style="color: #1dc9b7">
+              {{ scope.row.status_msg }}
             </div>
             <div class="statusStyle" v-else style="color: rgb(255, 184, 34)">
-              {{ scope.row.status }}
+              {{ scope.row.status_msg }}
             </div>
           </template>
         </el-table-column>
@@ -83,7 +83,7 @@
 
 <script>
 import axios from 'axios'
-import moment from "moment"
+import moment from 'moment'
 import QS from 'qs'
 export default {
   data () {
@@ -101,7 +101,11 @@ export default {
       bodyWidth: document.documentElement.clientWidth < 1024 ? true : false,
     }
   },
-  watch: {},
+  watch: {
+    $route: function (to, from) {
+      this.getData()
+    }
+  },
   methods: {
     copyTextToClipboard (text) {
       let _this = this
@@ -183,15 +187,14 @@ export default {
           _this.tableData = json.data.list
           _this.tableData.map(item => {
             item.visible = false
-            item.removed_at = moment(new Date(parseInt(item.removed_at))).format("YYYY-MM-DD HH:mm:ss")
-            item.due_at = moment(new Date(parseInt(item.due_at))).format("YYYY-MM-DD HH:mm:ss")
+            if (item.removed_at) item.removed_at = moment(new Date(parseInt(item.removed_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
+            if (item.due_at) item.due_at = moment(new Date(parseInt(item.due_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
           })
         } else {
-          _this.loading = false
           if (json.message) _this.$message.error(json.message);
           return false
         }
-
+        _this.loading = false
       }).catch(function (error) {
         console.log(error);
         _this.loading = false

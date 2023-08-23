@@ -1,7 +1,7 @@
 <template>
     <div class="company">
         <transition name="appFade" mode="out-in">
-            <router-view></router-view>
+            <router-view :currentBucket="currentBucket" :minioListBuckets="minioListBuckets"></router-view>
         </transition>
     </div>
 </template>
@@ -11,17 +11,18 @@ export default {
         return {
 
         }
-    }
+    },
+    props: ['currentBucket', 'minioListBuckets']
 }
 </script>
 <style lang="scss" scoped>
-.company{
-    box-sizing: border-box;
-    padding: 0;
-    background: rgb(255, 255, 255);
-    font-size: 0.2rem;
+.company {
+  box-sizing: border-box;
+  padding: 0;
+  background: rgb(255, 255, 255);
+  font-size: 0.2rem;
 }
-    
+
 .appFade-enter-active,
 .appFade-leave-active {
   transition: opacity 0.3s;
@@ -30,7 +31,6 @@ export default {
 .appFade-leave-to {
   opacity: 0;
 }
-@media screen and (max-width:999px){
-    
+@media screen and (max-width: 999px) {
 }
 </style>

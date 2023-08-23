@@ -22,16 +22,17 @@
             </el-option>
           </el-select>
         </el-form-item>
-        <!-- <el-form-item label="Choose your backup region:" prop="region">
-            <el-select v-model="ruleForm.region" placeholder="">
-              <el-option
-                v-for="item in ruleForm.regionOptions"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value">
-              </el-option>
-            </el-select>
-          </el-form-item> -->
+        <el-form-item label="Provider region:" prop="region">
+          <el-select v-model="ruleForm.region" placeholder="">
+            <el-option v-for="item in ruleForm.regionOptions" :key="item.value" :label="item.label" :value="item.value">
+            </el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Choose Your Buckets:" prop="choose_buckets">
+          <el-checkbox-group v-model="ruleForm.choose_buckets" v-if="minioListBuckets && minioListBuckets.buckets">
+            <el-checkbox v-for="(buck, b) in minioListBuckets.buckets" :key="b" :label="buck.name"></el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
         <el-form-item label="Duration:" prop="duration">
           <el-select v-model="ruleForm.duration" placeholder="">
             <el-option v-for="item in ruleForm.durationOptions" :key="item.value" :label="item.label" :value="item.value">
@@ -152,7 +153,8 @@ export default {
             value: "500",
             label: "500",
           },
-        ]
+        ],
+        choose_buckets: []
       },
       rules: {
         name: [
@@ -163,6 +165,7 @@ export default {
     }
   },
   watch: {},
+  props: ['currentBucket', 'minioListBuckets'],
   methods: {
     confirm () {
       this.dialogVisible = false
@@ -174,14 +177,16 @@ export default {
         if (valid) {
           _this.loading = true
           let minioDeal = {
-            "BackupPlanName": _this.ruleForm.name,
-            "BackupInterval": _this.ruleForm.frequency,      //unit in day
-            "Duration": String(_this.ruleForm.duration * 24 * 60 * 2),   //（The number of days entered by the user on the UI needs to be converted into epoch to the backend. For example, 10 days is 10*24*60*2）
-            "VerifiedDeal": _this.ruleForm.verified == '2' ? false : true,
-            "FastRetrieval": _this.ruleForm.fastRetirval == '2' ? false : true
+            "name": _this.ruleForm.name,
+            "bucket": _this.ruleForm.choose_buckets.join(","),
+            "interval": Number(_this.ruleForm.frequency),
+            "duration": Number(_this.ruleForm.duration),
+            "verified_deal": _this.ruleForm.verified == '2' ? false : true,
+            "fast_retrieval": _this.ruleForm.fastRetirval == '2' ? false : true,
+            "provider_region": _this.ruleForm.region,
           }
 
-          let postUrl = _this.data_api + `/minio/backup/add/plan`
+          let postUrl = _this.data_api + `/minio/backup/plan`
 
           axios.post(postUrl, minioDeal, {            headers: {
               'Authorization': "Bearer " + _this.$store.getters.accessToken
@@ -205,7 +210,7 @@ export default {
           return false;
         }
       });
-    },
+    }
   },
   mounted () {
     that = this
