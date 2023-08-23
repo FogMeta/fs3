@@ -141,7 +141,7 @@ export default {
 
       let update
       let jsonObject = {
-        "status": row.status
+        "status": row.status == 1 ? 0 : 1
       }
       if (type) update = axios.delete(`${_this.data_api}/minio/backup/plan/${row.id}`, {
         data: jsonObject,
@@ -167,7 +167,8 @@ export default {
             return false
           }
         }).catch(function (error) {
-          console.log(error);
+          console.log(error, error.response);
+          if (error.response && error.response.data) _this.$message.error(error.response.data.message)
           _this.loading = false
         });
 

@@ -164,7 +164,8 @@ export default {
         })
         _this.loading = false
       }).catch(function (error) {
-        console.log(error);
+        console.log(error, error.response);
+        if (error.response && error.response.data) _this.$message.error(error.response.data.message)
         _this.loading = false
       });
     },
