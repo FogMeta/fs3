@@ -126,36 +126,42 @@
         <el-table-column type="expand">
           <template slot-scope="props">
             <el-table :data="exChangeList" stripe style="width: 100%" class="demo-table-expand">
-              <el-table-column prop="data.timeStamp" label="Date">
+              <el-table-column prop="created_at" label="Date">
                 <template slot-scope="scope">
-                  {{exChangeList[scope.$index].data.timeStamp}}
+                  {{exChangeList[scope.$index].created_at}}
                   <!-- {{ props.row.date }} -->
                 </template>
               </el-table-column>
-              <el-table-column prop="data.dataCid" label="Data CID">
+              <el-table-column prop="data_cid" label="Data CID">
                 <template slot-scope="scope">
                   <div class="hot-cold-box">
-                    <el-popover placement="top" trigger="hover" v-model="exChangeList[scope.$index].data.visibleDataCid">
+                    <el-popover placement="top" trigger="hover" v-model="exChangeList[scope.$index].visibleDataCid">
                       <div class="upload_form_right">
-                        <p>{{exChangeList[scope.$index].data.dataCid}}</p>
+                        <p>{{exChangeList[scope.$index].data_cid}}</p>
                       </div>
-                      <el-button slot="reference" @click="copyLink(exChangeList[scope.$index].data.dataCid)">
+                      <el-button slot="reference" @click="copyLink(exChangeList[scope.$index].data_cid)">
                         <p>
-                          <i class="el-icon-document-copy"></i>{{exChangeList[scope.$index].data.dataCid}}</p>
+                          <i class="el-icon-document-copy"></i>{{exChangeList[scope.$index].data_cid}}</p>
                       </el-button>
                     </el-popover>
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column prop="data.duration" label="Duration"></el-table-column>
-              <el-table-column prop="data.providers" label="Storage Providers">
+              <el-table-column prop="duration" label="Duration">
                 <template slot-scope="scope">
                   <div class="hot-cold-box">
-                    <span v-for="miner in data.providers" :key="miner">{{miner}} &nbsp;&nbsp;</span>
+                    {{exChangeList[scope.$index].duration}} days
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column prop="data.status_msg" label="Status"></el-table-column>
+              <el-table-column prop="providers" label="Storage Providers">
+                <template slot-scope="scope">
+                  <div class="hot-cold-box">
+                    <span v-for="miner in exChangeList[scope.$index].providers" :key="miner">{{miner}} &nbsp;&nbsp;</span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="status_msg" label="Status"></el-table-column>
             </el-table>
 
             <div class="form_pagination">
@@ -593,11 +599,9 @@ export default {
           let dataAll = json.data.list || []
           if (dataAll && dataAll.length > 0) {
             dataAll.map(item => {
-              if (item.data) {
-                item.data.visible = false
-                item.data.visibleDataCid = false
-                item.data.timeStamp = Moment(new Date(item.data.timeStamp / 1000)).format('YYYY-MM-DD HH:mm:ss')
-              }
+              item.visible = false
+              item.visibleDataCid = false
+              item.created_at = item.created_at ? Moment(new Date(item.created_at * 1000)).format('YYYY-MM-DD HH:mm:ss') : '-'
             })
           }
           _this.exChangeList = dataAll

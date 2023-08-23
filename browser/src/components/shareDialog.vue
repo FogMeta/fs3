@@ -396,7 +396,7 @@ export default {
             }          }).then((response) => {
             let json = response.data
             if (json.status == 'success') {
-              _this.ruleForm.dealCID = json.data.dealCid
+              // _this.ruleForm.dealCID = json.data.dealCid
               _this.$message({
                 message: 'Transaction has been successfully sent.',
                 type: 'success'
