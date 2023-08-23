@@ -9679,7 +9679,7 @@ type BackupPlanPutReq struct {
 }
 
 type BackupPlanInfo struct {
-	ID            int    `json:"id"`
+	ID            uint   `json:"id"`
 	Name          string `json:"name"`
 	Bucket        string `json:"bucket"`
 	Interval      int    `json:"interval"`

@@ -133,7 +133,7 @@ func GetPsqlDb() (*gorm.DB, error) {
 }
 
 type PsqlBucketBackupPlan struct {
-	ID             int `gorm:"primary_key"`
+	ID             uint `gorm:"primary_key"`
 	UserAccessKey  string
 	Name           string
 	Bucket         string
@@ -198,6 +198,8 @@ func backup(bucket, object string, plan *PsqlBucketBackupPlan) (err error) {
 		Duration:       plan.Duration,
 		VerifiedDeal:   plan.VerifiedDeal,
 		FastRetrieval:  plan.FastRetrieval,
+		PlanID:         plan.ID,
+		PlanName:       plan.Name,
 	}).Error
 }
 
