@@ -8620,7 +8620,10 @@ func (web *webAPIHandlers) S3ImportList(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 	w.WriteHeader(http.StatusOK)
-	b, _ := json.Marshal(SendResponse{Status: SuccessResponseStatus})
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: DataWithCount{
+		Total: total,
+		List:  histories,
+	}})
 	w.Write(b)
 }
 
@@ -8893,7 +8896,7 @@ func (web *webAPIHandlers) BackupInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func backupInfo(bucket, object string, offset, limit int) (backups []*scheduler.PsqlBucketObjectBackup, total int, err error) {
-	backup := scheduler.PsqlBucketObjectBackup{}
+	backup := scheduler.PsqlBucketObjectBackup{BucketName: bucket, ObjectName: object}
 	if err = scheduler.GetPDB().Model(backup).Where(backup).Offset(offset).Limit(limit).Find(&backups).Error; err != nil {
 		return
 	}
@@ -8919,16 +8922,18 @@ func (web *webAPIHandlers) BackupStat(w http.ResponseWriter, r *http.Request) {
 	defer logger.AuditLog(ctx, w, r, claims.Map())
 
 	db := scheduler.GetPDB()
-	var stat BackupStat
-	for _, status := range []int{-1, 0, 1} {
-		var count int64
-		if err = db.Model(scheduler.PsqlBucketObjectBackup{}).Where("status = ?", status).Scan(&count).Error; err != nil {
-			writeWebErrorResponse(w, err)
-			return
-		}
-		if status == -1 {
+	backup := scheduler.PsqlBucketObjectBackup{UserAccessKey: claims.AccessKey}
+	var statusList []int
+	if err = db.Debug().Model(backup).Select("status").Where(backup).Scan(&statusList).Error; err != nil {
+		writeWebErrorResponse(w, err)
+		return
+	}
+	var stat FsStat
+	for _, status := range statusList {
+		s := scheduler.BackupStatusParse(status)
+		if s == -1 {
 			stat.FailedCnt++
-		} else if status == 0 {
+		} else if s == 0 {
 			stat.RunningCnt++
 		} else {
 			stat.CompletedCnt++
@@ -8949,16 +8954,18 @@ func (web *webAPIHandlers) RebuildStat(w http.ResponseWriter, r *http.Request) {
 	defer logger.AuditLog(ctx, w, r, claims.Map())
 
 	db := scheduler.GetPDB()
-	var stat BackupStat
-	for _, status := range []int{-1, 0, 1} {
-		var count int64
-		if err = db.Model(scheduler.PsqlBucketObjectRebuild{}).Where("status = ?", status).Scan(&count).Error; err != nil {
-			writeWebErrorResponse(w, err)
-			return
-		}
-		if status == -1 {
+	rebuild := scheduler.PsqlBucketObjectRebuild{UserAccessKey: claims.AccessKey}
+	var statusList []int
+	if err = db.Model(scheduler.PsqlBucketObjectRebuild{}).Where(rebuild).Scan(&statusList).Error; err != nil {
+		writeWebErrorResponse(w, err)
+		return
+	}
+	var stat FsStat
+	for _, status := range statusList {
+		s := scheduler.RebuildStatusParse(status)
+		if s == -1 {
 			stat.FailedCnt++
-		} else if status == 0 {
+		} else if s == 0 {
 			stat.RunningCnt++
 		} else {
 			stat.CompletedCnt++
@@ -9011,7 +9018,7 @@ type RebuildInfo struct {
 	UpdatedAt   int64    `json:"updated_at"`
 }
 
-type BackupStat struct {
+type FsStat struct {
 	RunningCnt   int `json:"running_cnt"`
 	CompletedCnt int `json:"completed_cnt"`
 	FailedCnt    int `json:"failed_cnt"`
@@ -9120,6 +9127,12 @@ func (web *webAPIHandlers) RebuildObjectInfo(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	if rebuild.UserAccessKey != claims.AccessKey {
+		logs.GetLogger().Error("no permission to operate ohters rebuild")
+		writeWebErrorResponse(w, errors.New("no access to rebuild"))
+		return
+	}
+
 	client := scheduler.NewMetaClient(env.Get("SWAN_KEY", ""), env.Get("SWAN_TOKEN", ""), env.Get("META_SERVER", ""))
 	data, err := client.Rebuild(rebuild.MsID, rebuild.ObjectName)
 	if err != nil {
@@ -9175,7 +9188,8 @@ func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Requ
 	// query backup
 	db := scheduler.GetPDB()
 	var rebuilds []*scheduler.PsqlBucketObjectRebuild
-	if err := db.Model(scheduler.PsqlBucketObjectRebuild{}).Offset(offset).Limit(limit).Find(&rebuilds).Error; err != nil {
+	rebuild := scheduler.PsqlBucketObjectRebuild{UserAccessKey: claims.AccessKey}
+	if err := db.Model(rebuild).Offset(offset).Limit(limit).Find(&rebuilds).Error; err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
 		return
@@ -9186,7 +9200,7 @@ func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Requ
 		total += offset
 	} else {
 		var count int64
-		if err := db.Model(scheduler.PsqlBucketObjectRebuild{}).Count(&count).Error; err != nil {
+		if err := db.Model(rebuild).Where(rebuild).Count(&count).Error; err != nil {
 			logs.GetLogger().Error(err)
 			writeWebErrorResponse(w, err)
 			return
@@ -9447,6 +9461,7 @@ func (web *webAPIHandlers) BackupPlanAdd(w http.ResponseWriter, r *http.Request)
 		Duration:       req.Duration,
 		VerifiedDeal:   req.VerifiedDeal,
 		FastRetrieval:  req.FastRetrieval,
+		Status:         scheduler.StatusEnabled,
 	}).Error; err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
@@ -9474,9 +9489,9 @@ func (web *webAPIHandlers) BackupPlanList(w http.ResponseWriter, r *http.Request
 	}
 
 	db := scheduler.GetPDB()
-	plan := scheduler.PsqlBucketBackupPlan{}
+	plan := scheduler.PsqlBucketBackupPlan{UserAccessKey: claims.AccessKey}
 	var plans []*scheduler.PsqlBucketBackupPlan
-	if err := db.Model(plan).Offset(offset).Limit(limit).Find(&plans).Error; err != nil {
+	if err := db.Model(plan).Where(plan).Offset(offset).Limit(limit).Find(&plans).Error; err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
 		return
@@ -9505,7 +9520,7 @@ func (web *webAPIHandlers) BackupPlanList(w http.ResponseWriter, r *http.Request
 		total += offset
 	} else {
 		var count int64
-		if err := db.Model(plan).Count(&count).Error; err != nil {
+		if err := db.Model(plan).Where(plan).Count(&count).Error; err != nil {
 			logs.GetLogger().Error(err)
 			writeWebErrorResponse(w, err)
 			return
@@ -9546,6 +9561,13 @@ func (web *webAPIHandlers) BackupPlanUpdate(w http.ResponseWriter, r *http.Reque
 		writeWebErrorResponse(w, err)
 		return
 	}
+
+	if plan.UserAccessKey != claims.AccessKey {
+		logs.GetLogger().Error("no permission to operate ohters plan")
+		writeWebErrorResponse(w, errors.New("no access to plan"))
+		return
+	}
+
 	var cols []string
 	if req.Name != nil {
 		cols = append(cols, "name")
@@ -9580,6 +9602,46 @@ func (web *webAPIHandlers) BackupPlanUpdate(w http.ResponseWriter, r *http.Reque
 
 	if len(cols) > 0 {
 		db.Model(plan).Select(cols).Updates(plan)
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus})
+	w.Write(b)
+}
+
+func (web *webAPIHandlers) BackupPlanDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "BackupPlanDelete")
+	claims, _, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	var req BackupPlanUpdateReq
+	err = json.NewDecoder(r.Body).Decode(&req)
+	if err != nil && err != io.EOF {
+		w.Write([]byte(fmt.Sprintf("bad request: %s", err.Error())))
+		return
+	}
+
+	db := scheduler.GetPDB()
+	vars := mux.Vars(r)
+	id := vars["id"]
+	var plan scheduler.PsqlBucketBackupPlan
+	if err := db.First(&plan, id).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	if plan.UserAccessKey != claims.AccessKey {
+		logs.GetLogger().Error("no permission to operate ohters plan")
+		writeWebErrorResponse(w, errors.New("no access to plan"))
+		return
+	}
+
+	if err := db.Delete(plan).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
 	}
 	w.WriteHeader(http.StatusOK)
 	b, _ := json.Marshal(Response{Status: SuccessResponseStatus})

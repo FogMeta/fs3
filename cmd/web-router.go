@@ -129,13 +129,14 @@ func registerWebRouter(router *mux.Router) error {
 	webBrowserRouter.Methods(http.MethodGet).Path("/backup/stat").HandlerFunc(httpTraceHdrs(web.BackupStat))
 	webBrowserRouter.Methods(http.MethodPost).Path("/backup/plan").HandlerFunc(httpTraceHdrs(web.BackupPlanAdd))
 	webBrowserRouter.Methods(http.MethodGet).Path("/backup/plan").HandlerFunc(httpTraceHdrs(web.BackupPlanList))
-	webBrowserRouter.Methods(http.MethodPut).Path("/backup/plan/{id}").HandlerFunc(httpTraceHdrs(web.BackupPlanUpdate))
+	webBrowserRouter.Methods(http.MethodPut).Path("/backup/plan/{id:[0-9]+}").HandlerFunc(httpTraceHdrs(web.BackupPlanUpdate))
+	webBrowserRouter.Methods(http.MethodDelete).Path("/backup/plan/{id:[0-9]+}").HandlerFunc(httpTraceHdrs(web.BackupPlanDelete))
 
 	// rebuild
 	webBrowserRouter.Methods(http.MethodPost).Path("/rebuild").HandlerFunc(httpTraceHdrs(web.RebuildObject))
-	webBrowserRouter.Methods(http.MethodGet).Path("/rebuild/{id}").HandlerFunc(httpTraceHdrs(web.RebuildObjectInfo))
-	webBrowserRouter.Methods(http.MethodGet).Path("/rebuild").HandlerFunc(httpTraceHdrs(web.RebuildObjectList))
 	webBrowserRouter.Methods(http.MethodGet).Path("/rebuild/stat").HandlerFunc(httpTraceHdrs(web.RebuildStat))
+	webBrowserRouter.Methods(http.MethodGet).Path("/rebuild/{id:[0-9]+}").HandlerFunc(httpTraceHdrs(web.RebuildObjectInfo))
+	webBrowserRouter.Methods(http.MethodGet).Path("/rebuild").HandlerFunc(httpTraceHdrs(web.RebuildObjectList))
 
 	// archives
 	webBrowserRouter.Methods(http.MethodGet).Path("/archives").HandlerFunc(httpTraceHdrs(web.ListArchiveBuckets))

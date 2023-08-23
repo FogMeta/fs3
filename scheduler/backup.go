@@ -142,6 +142,7 @@ type PsqlBucketBackupPlan struct {
 	LastAt         int64
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DeletedAt      gorm.DeletedAt `gorm:"index"`
 }
 
 func backup(bucket, object string, plan *PsqlBucketBackupPlan) (err error) {
@@ -212,4 +213,24 @@ func authenticateJWTUsersWithCredentials(credentials auth.Credentials, expiresAt
 
 	jwt := jwtgo.NewWithClaims(jwtgo.SigningMethodHS512, claims)
 	return jwt.SignedString([]byte(credentials.SecretKey))
+}
+
+func BackupStatusParse(status int) int {
+	if status >= 45 {
+		return 1
+	}
+	if status > 0 && status%10 == 0 {
+		return -1
+	}
+	return 0
+}
+
+func RebuildStatusParse(status int) int {
+	if status == 153 || status == 1 {
+		return 1
+	}
+	if status > 0 && status%10 == 0 {
+		return -1
+	}
+	return 0
 }
