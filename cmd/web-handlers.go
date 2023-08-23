@@ -9575,8 +9575,7 @@ func (web *webAPIHandlers) BackupPlanList(w http.ResponseWriter, r *http.Request
 }
 
 func (web *webAPIHandlers) BackupPlanUpdate(w http.ResponseWriter, r *http.Request) {
-	logs.GetLogger().Info("BackupPlanUpdate")
-	ctx := newContext(r, w, "ListArchiveObjects")
+	ctx := newContext(r, w, "BackupPlanUpdate")
 	claims, _, err := web.verify(w, r)
 	if err != nil {
 		return
@@ -9636,6 +9635,10 @@ func (web *webAPIHandlers) BackupPlanUpdate(w http.ResponseWriter, r *http.Reque
 	if req.ProviderRegion != nil {
 		cols = append(cols, "provider_region")
 		plan.ProviderRegion = *req.ProviderRegion
+	}
+	if req.Status != nil {
+		cols = append(cols, "status")
+		plan.Status = *req.Status
 	}
 
 	if len(cols) > 0 {
