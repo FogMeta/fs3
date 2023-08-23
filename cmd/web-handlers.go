@@ -9494,6 +9494,9 @@ func (web *webAPIHandlers) BackupPlanList(w http.ResponseWriter, r *http.Request
 			FastRetrieval: plan.FastRetrieval,
 			Status:        plan.Status,
 			StatusMsg:     scheduler.StatusMsgAble[plan.Status],
+			CreatedAt:     plan.CreatedAt.Unix(),
+			UpdatedAt:     plan.UpdatedAt.Unix(),
+			LastAt:        plan.LastAt,
 		})
 	}
 
@@ -9607,6 +9610,9 @@ type BackupPlanInfo struct {
 	FastRetrieval bool   `json:"fast_retrieval"`
 	Status        int    `json:"status"`
 	StatusMsg     string `json:"status_msg"`
+	CreatedAt     int64  `json:"created_at"`
+	UpdatedAt     int64  `json:"updated_at"`
+	LastAt        int64  `json:"last_at"`
 }
 
 type BackupPlanUpdateReq struct {
