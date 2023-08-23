@@ -8886,8 +8886,8 @@ func (web *webAPIHandlers) BackupList(w http.ResponseWriter, r *http.Request) {
 			backup.Duration = DefaultBackupDuration
 		}
 		providers := []string{}
-		if backup.Providers!= ""{
-			providers =strings.Split(backup.Providers, ",")
+		if backup.Providers != "" {
+			providers = strings.Split(backup.Providers, ",")
 		}
 		list = append(list, &BackupInfo{
 			ID:         backup.ID,
@@ -8900,7 +8900,7 @@ func (web *webAPIHandlers) BackupList(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt:  backup.UpdatedAt.Unix(),
 			Status:     backup.Status,
 			StatusMsg:  backup.StatusMsg,
-			CanRebuild: backup.Status >= 33,
+			CanRebuild: backup.Status >= 45,
 		})
 	}
 
@@ -9077,6 +9077,7 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 	data, err := client.Rebuild(backup.MsID, req.Object)
 	if err != nil {
 		logs.GetLogger().Error("backup error:", err)
+		writeWebErrorResponse(w, err)
 		return
 	}
 
