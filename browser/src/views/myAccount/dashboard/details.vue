@@ -267,23 +267,6 @@ export default {
       axios.post(postUrl, params, {        headers: {
           'Authorization': "Bearer " + _this.$store.getters.accessToken
         }      }).then((response) => {
-        let json = response.data
-        if (json.status == 'success') _this.confirmDetail(_this.backupPlan.id)
-        else _this.$message.error(json.message)
-      }).catch(function (error) {
-        console.log(error, error.response);
-        if (error.response && error.response.data) _this.$message.error(error.response.data.message)
-        _this.loading = false
-      });
-    },
-    confirmDetail (id) {
-      let _this = this
-      _this.loading = true
-      let postUrl = _this.data_api + `/minio/rebuild/${id}`
-
-      axios.get(postUrl, {        headers: {
-          'Authorization': "Bearer " + _this.$store.getters.accessToken
-        }      }).then((response) => {
         _this.loading = false
         let json = response.data
         if (json.status == 'success') {
@@ -291,12 +274,10 @@ export default {
           if (_this.backupPlan.created_at) _this.backupPlan.created_at = moment(new Date(parseInt(_this.backupPlan.created_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
 
           _this.dialogConfirm = true
-        } else {
-          _this.$message.error(json.message);
-          return false
-        }
+        } else _this.$message.error(json.message)
       }).catch(function (error) {
-        console.log(error);
+        console.log(error, error.response);
+        if (error.response && error.response.data) _this.$message.error(error.response.data.message)
         _this.loading = false
       });
     },
