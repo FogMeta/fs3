@@ -65,7 +65,7 @@ func BackupScheduler() {
 	c := cron.New()
 	interval := "@every 2m"
 	err := c.AddFunc(interval, func() {
-		logs.GetLogger().Println("++++++++++ backup volume scheduler is running at " + time.Now().Format("2006-01-02 15:04:05") + " ++++++++++")
+		logs.GetLogger().Println("++++++++++ backup scheduler is running at " + time.Now().Format("2006-01-02 15:04:05") + " ++++++++++")
 		err := BackupBucketScheduler()
 		if err != nil {
 			logs.GetLogger().Error(err)
@@ -84,12 +84,16 @@ func BackupBucketScheduler() error {
 	//get all the running backup plans from db
 	var plans []*PsqlBucketBackupPlan
 	plan := PsqlBucketBackupPlan{Status: 1}
-	interval := plan.Interval * 3600 * 24
-	if err := pdb.Model(plan).Where(plan).Where("last_at < ?", time.Now().Unix()-int64(interval)).Find(&plans).Error; err != nil {
+	if err := pdb.Debug().Model(plan).Where(plan).Find(&plans).Error; err != nil {
 		logs.GetLogger().Error(err)
 		return err
 	}
 	for _, plan := range plans {
+		interval := plan.Interval * 3600 * 24
+		if plan.LastAt >= time.Now().Unix()-int64(interval) {
+			logs.GetLogger().Infof("plan %s already in backup progress", plan.Name)
+			continue
+		}
 		if err := backupPlan(plan); err != nil {
 			logs.GetLogger().Error(err)
 			continue

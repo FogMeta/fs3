@@ -8842,8 +8842,10 @@ func backup(accessKey, bucket, object string, req *BackupReq) (err error) {
 	}).Error
 }
 
-func (web *webAPIHandlers) BackupInfo(w http.ResponseWriter, r *http.Request) {
-	ctx := newContext(r, w, "BackupInfo")
+const DefaultBackupDuration = 500
+
+func (web *webAPIHandlers) BackupList(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "BackupList")
 
 	claims, permissionAllow, err := web.verify(w, r)
 	if err != nil {
@@ -8872,18 +8874,28 @@ func (web *webAPIHandlers) BackupInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	backups, total, err := backupInfo(bucket, object, offset, limit)
+	backups, total, err := backupInfo(claims.AccessKey, bucket, object, offset, limit)
 	if err != nil {
 		writeWebErrorResponse(w, err)
 		return
 	}
 	list := make([]*BackupInfo, 0, len(backups))
+
 	for _, backup := range backups {
+		if backup.Duration == 0 || backup.Duration > DefaultBackupDuration {
+			backup.Duration = DefaultBackupDuration
+		}
 		list = append(list, &BackupInfo{
-			Size:      backup.Size,
-			DataCID:   backup.PayloadCID,
-			Providers: strings.Split(backup.Providers, ","),
-			CreatedAt: backup.CreatedAt.Unix(),
+			ID:         backup.ID,
+			PlanName:   backup.PlanName,
+			Size:       backup.Size,
+			DataCID:    backup.PayloadCID,
+			Providers:  strings.Split(backup.Providers, ","),
+			CreatedAt:  backup.CreatedAt.Unix(),
+			UpdatedAt:  backup.UpdatedAt.Unix(),
+			Status:     backup.Status,
+			StatusMsg:  backup.StatusMsg,
+			CanRebuild: backup.Status >= 33,
 		})
 	}
 
@@ -8895,8 +8907,8 @@ func (web *webAPIHandlers) BackupInfo(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
-func backupInfo(bucket, object string, offset, limit int) (backups []*scheduler.PsqlBucketObjectBackup, total int, err error) {
-	backup := scheduler.PsqlBucketObjectBackup{BucketName: bucket, ObjectName: object}
+func backupInfo(accessKey, bucket, object string, offset, limit int) (backups []*scheduler.PsqlBucketObjectBackup, total int, err error) {
+	backup := scheduler.PsqlBucketObjectBackup{UserAccessKey: accessKey, BucketName: bucket, ObjectName: object}
 	if err = scheduler.GetPDB().Model(backup).Where(backup).Offset(offset).Limit(limit).Find(&backups).Error; err != nil {
 		return
 	}
@@ -8991,13 +9003,17 @@ type BackupReq struct {
 }
 
 type BackupInfo struct {
-	Size      int64    `json:"size"`
-	DataCID   string   `json:"data_cid"`
-	Providers []string `json:"providers"`
-	CreatedAt int64    `json:"created_at"`
-	Duration  int      `json:"duration"`
-	Status    int      `json:"status"`
-	StatusMsg string   `json:"status_msg"`
+	ID         uint     `json:"id"`
+	PlanName   string   `json:"plan_name"`
+	Size       int64    `json:"size"`
+	DataCID    string   `json:"data_cid"`
+	Providers  []string `json:"providers"`
+	CreatedAt  int64    `json:"created_at"`
+	UpdatedAt  int64    `json:"updated_at"`
+	Duration   int      `json:"duration"`
+	Status     int      `json:"status"`
+	StatusMsg  string   `json:"status_msg"`
+	CanRebuild bool     `json:"can_rebuild"`
 }
 
 type RebuildReq struct {

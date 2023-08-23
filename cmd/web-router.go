@@ -124,8 +124,8 @@ func registerWebRouter(router *mux.Router) error {
 
 	// backup
 	webBrowserRouter.Methods(http.MethodPost).Path("/backup/{bucket}/{object:.+}").HandlerFunc(httpTraceHdrs(web.Backup))
-	webBrowserRouter.Methods(http.MethodGet).Path("/backup/{bucket}/{object:.+}").HandlerFunc(httpTraceHdrs(web.BackupInfo))
-	webBrowserRouter.Methods(http.MethodGet).Path("/backup/").HandlerFunc(httpTraceHdrs(web.BackupInfo))
+	webBrowserRouter.Methods(http.MethodGet).Path("/backup/{bucket}/{object:.+}").HandlerFunc(httpTraceHdrs(web.BackupList))
+	webBrowserRouter.Methods(http.MethodGet).Path("/backup/").HandlerFunc(httpTraceHdrs(web.BackupList))
 	webBrowserRouter.Methods(http.MethodGet).Path("/backup/stat").HandlerFunc(httpTraceHdrs(web.BackupStat))
 	webBrowserRouter.Methods(http.MethodPost).Path("/backup/plan").HandlerFunc(httpTraceHdrs(web.BackupPlanAdd))
 	webBrowserRouter.Methods(http.MethodGet).Path("/backup/plan").HandlerFunc(httpTraceHdrs(web.BackupPlanList))
