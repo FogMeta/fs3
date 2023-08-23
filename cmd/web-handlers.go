@@ -9028,12 +9028,13 @@ type RebuildReq struct {
 
 type RebuildInfo struct {
 	ID          uint     `json:"id"`
-	BackUpID    uint     `json:"backup_id"`
+	BackupID    uint     `json:"backup_id"`
 	PlanID      uint     `json:"plan_id"`
 	PlanName    string   `json:"plan_name"`
 	Providers   []string `json:"providers"`
 	DataCID     string   `json:"data_cid"`
 	Status      int      `json:"status"`
+	StatusMsg   string   `json:"status_msg"`
 	DownloadURL string   `json:"download_url"`
 	CreatedAt   int64    `json:"created_at"`
 	UpdatedAt   int64    `json:"updated_at"`
@@ -9117,7 +9118,16 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	w.WriteHeader(http.StatusOK)
-	b, _ := json.Marshal(Response{Status: SuccessResponseStatus})
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: RebuildInfo{
+		ID:        rebuild.ID,
+		BackupID:  rebuild.BackupID,
+		PlanID:    rebuild.PlanID,
+		PlanName:  rebuild.PlanName,
+		Status:    rebuild.Status,
+		StatusMsg: scheduler.RebuildStatusMsg[rebuild.Status],
+		CreatedAt: rebuild.CreatedAt.Unix(),
+		UpdatedAt: rebuild.UpdatedAt.Unix(),
+	}})
 	w.Write(b)
 }
 
@@ -9177,7 +9187,7 @@ func (web *webAPIHandlers) RebuildObjectInfo(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: &RebuildInfo{
 		ID:          rebuild.ID,
-		BackUpID:    rebuild.BackupID,
+		BackupID:    rebuild.BackupID,
 		PlanID:      rebuild.PlanID,
 		PlanName:    rebuild.PlanName,
 		Providers:   data.Providers,
@@ -9186,6 +9196,7 @@ func (web *webAPIHandlers) RebuildObjectInfo(w http.ResponseWriter, r *http.Requ
 		DownloadURL: data.PayloadURL,
 		CreatedAt:   data.CreatedAt,
 		UpdatedAt:   rebuild.UpdatedAt.Unix(),
+		StatusMsg:   scheduler.RebuildStatusMsg[rebuild.Status],
 	}})
 	w.Write(b)
 }
@@ -9232,17 +9243,22 @@ func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Requ
 
 	list := make([]*RebuildInfo, 0, len(rebuilds))
 	for _, rebuild := range rebuilds {
+		providers := []string{}
+		if rebuild.Providers != "" {
+			providers = strings.Split(rebuild.Providers, ",")
+		}
 		list = append(list, &RebuildInfo{
 			ID:          rebuild.ID,
-			BackUpID:    rebuild.BackupID,
+			BackupID:    rebuild.BackupID,
 			PlanID:      rebuild.PlanID,
 			PlanName:    rebuild.PlanName,
-			Providers:   strings.Split(rebuild.Providers, ","),
+			Providers:   providers,
 			DataCID:     rebuild.PayloadCID,
 			Status:      rebuild.Status,
 			DownloadURL: rebuild.PayloadURL,
 			CreatedAt:   rebuild.CreatedAt.Unix(),
 			UpdatedAt:   rebuild.UpdatedAt.Unix(),
+			StatusMsg:   scheduler.RebuildStatusMsg[rebuild.Status],
 		})
 	}
 
