@@ -146,11 +146,12 @@ type FileDesc struct {
 }
 
 type DealInfo struct {
-	DealId     int
-	DealCid    string
-	MinerFid   string
-	StartEpoch int
-	Cost       string
+	DealId        int
+	DealCid       string
+	MinerFid      string
+	StartEpoch    int
+	Cost          string
+	StorageStatus string
 }
 
 type RebuildResp struct {

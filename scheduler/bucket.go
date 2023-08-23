@@ -3,6 +3,8 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -328,16 +330,17 @@ type PsqlBucketObjectBackupSlice struct {
 }
 
 type PsqlBucketObjectBackupSliceDeal struct {
-	ID         uint   `gorm:"primarykey"`
-	BackUpID   uint   `gorm:"column:backup_id"`
-	PayloadCID string `gorm:"column:payload_cid"`
-	MinerID    string `gorm:"column:miner_id"`
-	DealID     int    `gorm:"column:deal_id"`
-	DealCID    string `gorm:"column:deal_cid"`
-	Cost       string
-	Status     int
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID            uint   `gorm:"primarykey"`
+	BackUpID      uint   `gorm:"column:backup_id"`
+	PayloadCID    string `gorm:"column:payload_cid"`
+	MinerID       string `gorm:"column:miner_id"`
+	DealID        int    `gorm:"column:deal_id"`
+	DealCID       string `gorm:"column:deal_cid"`
+	StorageStatus string
+	Cost          string
+	Status        int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 func BackupSyncScheduler() {
@@ -403,38 +406,58 @@ func syncBackupInfo(backup *PsqlBucketObjectBackup) error {
 		logs.GetLogger().Error(err)
 		return err
 	}
+	activeMinerMap := make(map[string]bool)
 	for _, fd := range resp.FileDescList {
-		if err := syncBackupDetail(backup.ID, fd); err != nil {
+		activeMiners, err := syncBackupDetail(backup.ID, fd)
+		if err != nil {
 			logs.GetLogger().Error(err)
+		}
+		for _, miner := range activeMiners {
+			activeMinerMap[miner] = true
+		}
+	}
+
+	activeMiners := make([]string, 0, len(activeMinerMap))
+	for miner := range activeMinerMap {
+		activeMiners = append(activeMiners, miner)
+	}
+	sort.Strings(activeMiners)
+	if len(activeMiners) > 0 {
+		providers := strings.Join(activeMiners, ",")
+		if providers != backup.Providers {
+			pdb.Model(backup).Updates(PsqlBucketObjectBackup{Providers: providers})
 		}
 	}
 	return nil
 }
 
-func syncBackupDetail(id uint, fd *FileDesc) error {
+func syncBackupDetail(id uint, fd *FileDesc) (activeMiners []string, err error) {
 	bs := &PsqlBucketObjectBackupSlice{
 		BackupID:   id,
 		PayloadCID: fd.PayloadCid,
 	}
 
-	if err := pdb.Where(bs).First(bs).Error; err != nil {
+	if err = pdb.Where(bs).First(bs).Error; err != nil {
 		// insert
 		bs.FileName = fd.CarFileName
 		bs.PayloadURL = fd.CarFileUrl
 		bs.Size = fd.SourceFileSize
 		if err = pdb.Create(bs).Error; err != nil {
-			return err
+			return
 		}
 	}
 	// update
 	if bs.PayloadURL != fd.CarFileUrl {
-		if err := pdb.Model(bs).Updates(&PsqlBucketObjectBackupSlice{PayloadURL: fd.CarFileUrl}).Error; err != nil {
-			return err
+		if err = pdb.Model(bs).Updates(&PsqlBucketObjectBackupSlice{PayloadURL: fd.CarFileUrl}).Error; err != nil {
+			return
 		}
 	}
 
 	// deals
 	for _, deal := range fd.Deals {
+		if deal.StorageStatus == "StorageDealActive" {
+			activeMiners = append(activeMiners, deal.MinerFid)
+		}
 		// query deal
 		bsd := &PsqlBucketObjectBackupSliceDeal{
 			BackUpID: bs.ID,
@@ -452,15 +475,16 @@ func syncBackupDetail(id uint, fd *FileDesc) error {
 
 		// update
 		if bsd.DealID != deal.DealId || bsd.DealCID != deal.DealCid {
-			if err := pdb.Model(bsd).Updates(PsqlBucketObjectBackupSliceDeal{
+			if err = pdb.Model(bsd).Updates(PsqlBucketObjectBackupSliceDeal{
 				DealID:  deal.DealId,
 				DealCID: deal.DealCid,
 			}).Error; err != nil {
-				return err
+				return
 			}
 		}
 	}
-	return nil
+
+	return
 }
 
 func RecordRemoveObjectInfo(accessKey, bucket string, objects []string) error {
