@@ -18,7 +18,7 @@
             {{ scope.row.id }}
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="Backup Plan Name" width="180"></el-table-column>
+        <el-table-column prop="plan_name" label="Backup Plan Name" width="180"></el-table-column>
         <el-table-column prop="created_at" label="Date Created" width="120">
           <template slot-scope="scope">
             {{ scope.row.created_at || '-' }}
@@ -41,7 +41,7 @@
         <el-table-column prop="providers" label="Storage Providers" width="120">
           <template slot-scope="scope">
             <el-select v-model="scope.row.providersValue" placeholder="">
-              <el-option v-for="item in scope.row.providersOptions" :key="item.value" :label="item.label" :value="item.value">
+              <el-option v-for="item in scope.row.providers" :key="item" :label="item" :value="item">
               </el-option>
             </el-select>
           </template>
@@ -53,7 +53,7 @@
             </div>
           </template>
           <template slot-scope="scope">
-            {{ scope.row.duration || '-' }}
+            {{ scope.row.duration || '-' }} days
           </template>
         </el-table-column>
         <el-table-column prop="updated_at" label="Last Updated" width="120">
@@ -63,13 +63,13 @@
         </el-table-column>
         <el-table-column prop="status_msg" label="Status" width="140">
           <template slot-scope="scope">
-            <div class="statusStyle" v-if="scope.row.status_msg == 'Created'" style="color: #0a318e">
+            <div class="statusStyle" v-if="scope.row.status_msg && scope.row.status_msg.toLowerCase() == 'created'" style="color: #0a318e">
               {{ scope.row.status_msg }}
             </div>
-            <div class="statusStyle" v-else-if="scope.row.status_msg == 'Running'" style="color: #ffb822">
+            <div class="statusStyle" v-else-if="scope.row.status_msg && scope.row.status_msg.toLowerCase() == 'running'" style="color: #ffb822">
               {{ scope.row.status_msg }}
             </div>
-            <div class="statusStyle" v-else-if="scope.row.status_msg == 'Completed'" style="color: #1dc9b7">
+            <div class="statusStyle" v-else-if="scope.row.status_msg && scope.row.status_msg.toLowerCase() == 'completed'" style="color: #1dc9b7">
               {{ scope.row.status_msg }}
             </div>
             <div class="statusStyle" v-else style="color: rgb(255, 184, 34)">
@@ -79,7 +79,7 @@
         </el-table-column>
         <el-table-column prop="" label="Action" min-width="130">
           <template slot-scope="scope">
-            <el-button v-if="scope.row.status_msg != 'Completed'" type="info" @click="dialogDis=true">Rebuild</el-button>
+            <el-button v-if="scope.row.status_msg && scope.row.status_msg.toLowerCase() != 'completed'" type="info" @click="dialogDis=true">Rebuild</el-button>
             <el-button v-else type="primary" @click="detailFun(scope.row)">Rebuild</el-button>
           </template>
         </el-table-column>
@@ -94,13 +94,13 @@
         <el-table-column prop="updated_at" label="Date Updated" width="120"></el-table-column>
         <el-table-column prop="status_msg" label="Status" width="140">
           <template slot-scope="scope">
-            <div class="statusStyle" v-if="scope.row.status_msg == 'Created'" style="color: #0a318e">
+            <div class="statusStyle" v-if="scope.row.status_msg && scope.row.status_msg.toLowerCase() == 'created'" style="color: #0a318e">
               {{ scope.row.status_msg }}
             </div>
-            <div class="statusStyle" v-else-if="scope.row.status_msg == 'Running'" style="color: #ffb822">
+            <div class="statusStyle" v-else-if="scope.row.status_msg && scope.row.status_msg.toLowerCase() == 'running'" style="color: #ffb822">
               {{ scope.row.status_msg }}
             </div>
-            <div class="statusStyle" v-else-if="scope.row.status_msg == 'Completed'" style="color: #1dc9b7">
+            <div class="statusStyle" v-else-if="scope.row.status_msg && scope.row.status_msg.toLowerCase() == 'completed'" style="color: #1dc9b7">
               {{ scope.row.status_msg }}
             </div>
             <div class="statusStyle" v-else style="color: rgb(255, 184, 34)">
@@ -134,7 +134,7 @@
     <el-dialog title="Rebuild Image" custom-class="formStyle" :visible.sync="dialogVisible" :width="dialogWidth">
       <img src="@/assets/images/small_bell.png" class="icon" alt="">
       <span class="span">Are you sure you want to rebuild volume from
-        <b>{{backupPlan.Name}}</b> ?</span>
+        <b>{{backupPlan.plan_name}}</b> ?</span>
       <span class="span">This action will overwrite your existing file system,</span>
       <span class="span">
         <b>Proceed?</b>
@@ -153,30 +153,35 @@
       <el-card class="box-card">
         <div class="statusStyle">
           <div class="list">
-            <span>Rebuild ID: </span> {{backupPlan.ID}}</div>
+            <span>Rebuild ID: </span> {{backupPlan.id}}</div>
           <div class="list">
-            <span>Date Created:</span> {{backupPlan.CreatedOn}}</div>
+            <span>Date Created:</span> {{backupPlan.created_at || '-'}}</div>
           <div class="list">
-            <span>W3SSID:</span> {{backupPlan.MinerId}}</div>
+            <span>Storage Providers:</span>
+            <el-select v-model="backupPlan.providersValue" placeholder="">
+              <el-option v-for="item in backupPlan.providers" :key="item" :label="item" :value="item">
+              </el-option>
+            </el-select>
+          </div>
           <div class="list">
-            <span>Backup ID:</span> {{backupPlan.BackupJobId}} </div>
+            <span>Backup ID:</span> {{backupPlan.backup_id}} </div>
           <div class="list">
-            <span>Data CID:</span> {{backupPlan.PayloadCid}} </div>
-          <div class="list">
-            <span>Deal CID:</span> {{backupPlan.DealCid}} </div>
+            <span>Data CID:</span> {{backupPlan.data_cid}} </div>
+          <!-- <div class="list">
+            <span>Deal CID:</span> {{backupPlan.DealCid}} </div> -->
           <div class="list">
             <span>Stauts:</span>
-            <small v-if="backupPlan.Status == 'Created'" style="color: #0a318e">
-              {{ backupPlan.Status }}
+            <small v-if="backupPlan.status_msg && backupPlan.status_msg.toLowerCase() == 'created'" style="color: #0a318e">
+              {{ backupPlan.status_msg }}
             </small>
-            <small v-else-if="backupPlan.Status == 'Running'" style="color: #ffb822">
-              {{ backupPlan.Status }}
+            <small v-else-if="backupPlan.status_msg && backupPlan.status_msg.toLowerCase() == 'running'" style="color: #ffb822">
+              {{ backupPlan.status_msg }}
             </small>
-            <small v-else-if="backupPlan.Status == 'Completed'" style="color: #1dc9b7">
-              {{ backupPlan.Status }}
+            <small v-else-if="backupPlan.status_msg && backupPlan.status_msg.toLowerCase() == 'completed'" style="color: #1dc9b7">
+              {{ backupPlan.status_msg }}
             </small>
             <small v-else style="color: rgb(255, 184, 34)">
-              {{ backupPlan.Status }}
+              {{ backupPlan.status_msg }}
             </small>
           </div>
         </div>
@@ -255,26 +260,42 @@ export default {
       let _this = this
       _this.dialogVisible = false
       _this.loading = true
-      let postUrl = _this.data_api + `/minio/rebuild/add/job`
+      let postUrl = _this.data_api + `/minio/rebuild`
       let params = {
-        "BackupTaskId": _this.backupPlan.ID
+        "backup_id": _this.backupPlan.id
       }
 
       axios.post(postUrl, params, {        headers: {
+          'Authorization': "Bearer " + _this.$store.getters.accessToken
+        }      }).then((response) => {
+        let json = response.data
+        if (json.status == 'success') _this.confirmDetail(_this.backupPlan.id)
+        else _this.$message.error(json.message)
+      }).catch(function (error) {
+        console.log(error, error.response);
+        if (error.response && error.response.data) _this.$message.error(error.response.data.message)
+        _this.loading = false
+      });
+    },
+    confirmDetail (id) {
+      let _this = this
+      _this.loading = true
+      let postUrl = _this.data_api + `/minio/rebuild/${id}`
+
+      axios.get(postUrl, {        headers: {
           'Authorization': "Bearer " + _this.$store.getters.accessToken
         }      }).then((response) => {
         _this.loading = false
         let json = response.data
         if (json.status == 'success') {
           _this.backupPlan = json.data
-          if (_this.backupPlan.CreatedOn) _this.backupPlan.CreatedOn = moment(new Date(parseInt(_this.backupPlan.CreatedOn / 1000))).format("YYYY-MM-DD HH:mm:ss")
+          if (_this.backupPlan.created_at) _this.backupPlan.created_at = moment(new Date(parseInt(_this.backupPlan.created_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
 
           _this.dialogConfirm = true
         } else {
           _this.$message.error(json.message);
           return false
         }
-
       }).catch(function (error) {
         console.log(error);
         _this.loading = false
@@ -290,8 +311,8 @@ export default {
     },
     detailFun (row) {
       let _this = this
-      _this.backupPlan.Name = row.Name
-      _this.backupPlan.ID = row.id
+      _this.backupPlan.plan_name = row.plan_name
+      _this.backupPlan.id = row.id
       _this.dialogVisible = true
     },
     productName () {
@@ -371,15 +392,11 @@ export default {
           let json = response.data
           if (json.status == 'success') {
             _this.parma.total = json.data.total
-            _this.tableData = json.data.list
+            _this.tableData = json.data.list || []
             _this.tableData.map(item => {
               item.visible = false
               item.dataVisible = false
-              item.duration =
-                item.duration ?
-                  moment(new Date(parseInt(parseInt(item.duration * 1000)))).format("YYYY-MM-DD HH:mm:ss")
-                  :
-                  '-'
+              item.providersValue = ''
               item.created_at =
                 item.created_at ?
                   moment(new Date(parseInt(item.created_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
