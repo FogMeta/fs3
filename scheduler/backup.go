@@ -166,7 +166,7 @@ func backup(bucket, object string, plan *PsqlBucketBackupPlan) (err error) {
 		return
 	}
 
-	downloadURL, _ := url.JoinPath(env.Get("HOST_NAME", ""), "", "download", bucket, object)
+	downloadURL, _ := url.JoinPath(env.Get("HOST_NAME", ""), "minio", "download", bucket, object)
 	values := url.Values{}
 	values.Set("token", token)
 	if fi.IsDir() {

@@ -144,6 +144,7 @@ func registerWebRouter(router *mux.Router) error {
 
 	// These methods use short-expiry tokens in the URLs. These tokens may unintentionally
 	// be logged, so a new one must be generated for each request.
+	webBrowserRouter.Methods(http.MethodGet).Path("/download/{bucket}").Queries("token", "{token:.*}").HandlerFunc(httpTraceHdrs(web.Download))
 	webBrowserRouter.Methods(http.MethodGet).Path("/download/{bucket}/{object:.+}").Queries("token", "{token:.*}").HandlerFunc(httpTraceHdrs(web.Download))
 	webBrowserRouter.Methods(http.MethodPost).Path("/zip").Queries("token", "{token:.*}").HandlerFunc(httpTraceHdrs(web.DownloadZip))
 
