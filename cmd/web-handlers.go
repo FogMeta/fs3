@@ -1452,7 +1452,7 @@ func (web *webAPIHandlers) Download(w http.ResponseWriter, r *http.Request) {
 		writeWebErrorResponse(w, err)
 		return
 	}
-
+	logs.GetLogger().Infof("bucket: %s, object: %s", bucket, object)
 	getRetPerms := ErrAccessDenied
 	legalHoldPerms := ErrAccessDenied
 
@@ -1539,12 +1539,14 @@ func (web *webAPIHandlers) Download(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Query().Get("format") == "zip" {
 		var prefix, obj string
-		if !HasSuffix(object, SlashSeparator) {
-			obj = filepath.Base(object)
-			prefix = filepath.Dir(object)
-		} else {
-			obj = filepath.Base(object) + SlashSeparator
-			prefix = filepath.Dir(strings.TrimRight(object, slashSeparator))
+		if object != "" {
+			if HasSuffix(object, SlashSeparator) {
+				obj = filepath.Base(object) + SlashSeparator
+				prefix = filepath.Dir(strings.TrimRight(object, slashSeparator))
+			} else {
+				obj = filepath.Base(object)
+				prefix = filepath.Dir(object)
+			}
 		}
 		if prefix == "." {
 			prefix = ""
@@ -1850,7 +1852,7 @@ func (web *webAPIHandlers) DownloadZip(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 
-		if !HasSuffix(object, SlashSeparator) {
+		if object != "" && !HasSuffix(object, SlashSeparator) {
 			// If not a directory, compress the file and write it to response.
 			err := zipit(pathJoin(args.Prefix, object))
 			if err != nil {
