@@ -12,8 +12,11 @@
             <div class="fes-search">
                 <el-input placeholder="Search Buckets..." prefix-icon="el-icon-search" v-model="search" @input="searchBucketFun">
                 </el-input>
+                <div class="introduce">
+                    <p>Bucket</p>
+                </div>
                 <el-row>
-                    <el-col :span="24" v-for="(item, index) in minioListBucketsAll.buckets" :key="index" :class="{'active': item.name == currentBucket && allActive}" @click.native="getListBucket(item.name, true)">
+                    <el-col :span="24" v-for="(item, index) in minioListBucketsAll.buckets" :key="index" :class="{'active': item.name == currentBucket && allActive && $route.name === 'fs3'}" @click.native="getListBucket(item.name, true)">
                         <div>
                             <i class="iconfont icon-harddriveyingpan"></i>
                             {{item.name}}
@@ -51,31 +54,16 @@
 
             </div>
             <div class="fes-search">
-                <el-row>
-                    <el-col :span="24">
-                        <div>Archives</div>
-                        <i class="caozuo el-icon-more" @click.stop="archivesShow = true"></i>
-
-                        <ul class="ul-list" v-if="archivesShow" v-infinite-scroll="load" infinite-scroll-disabled="disabled">
-                            <div class="close">
-                                <svg t="1639106161967" @click.stop="archivesShow=false" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1779">
-                                    <path d="M561.17013333 509.06026667L858.02666667 213.73973333c14.03733333-13.968 14.1088-36.60053333 0.1408-50.63786666-13.99893333-14.06826667-36.592-14.10773333-50.62933334-0.1408L510.6048 458.31466667 216.256 163.06986667c-13.9328-13.96693333-36.59733333-14.03733333-50.63466667-0.07146667-14.00426667 13.96586667-14.03733333 36.63146667-0.0704 50.6688l294.27733334 295.1744-296.71466667 295.14026667c-14.0384 13.968-14.1088 36.59733333-0.14293333 50.63786666a35.7216 35.7216 0 0 0 25.3856 10.56c9.13066667 0 18.26666667-3.4688 25.25013333-10.4192l296.78613333-295.2128L807.4304 857.48266667c6.9824 7.02186667 16.15253333 10.53013333 25.35253333 10.53013333a35.72906667 35.72906667 0 0 0 25.28213334-10.45973333c13.99893333-13.96586667 14.03733333-36.592 0.07146666-50.62933334L561.17013333 509.06026667z m0 0"
-                                        p-id="1780" fill="#333333"></path>
-                                </svg>
-                            </div>
-                            <li v-for="item in archivesList" :key="item.bucket" @click.stop="archivesShow=false">
-                                <router-link :to="{name: 'my_archives', params: {name: item.bucket}}">{{item.bucket}}</router-link>
-                            </li>
-                            <p v-if="loading" class="t">Loading...</p>
-                            <p v-if="noMore && (archivesList && archivesList.length>10)" class="t">No more</p>
-                        </ul>
-                    </el-col>
-
-                    <!-- <el-col :span="24" class="active"
-                    style="margin-top:0.2rem;justify-content: center;padding: 0.1rem 0;color: #fff" @click.native="getListBucket('', false, false, true)">
-                    All Deals
-                    </el-col> -->
-                </el-row>
+                <div class="introduce">
+                    <p>Archives</p>
+                </div>
+                <div class="introRouter ul-list" v-infinite-scroll="load" infinite-scroll-disabled="disabled">
+                    <div v-for="item in archivesList" :key="item.bucket" @click.stop="archivesShow=false">
+                        <router-link :to="{name: 'my_archives', params: {name: item.bucket}}" :class="{'active': activeTree == item.bucket}">{{item.bucket}}</router-link>
+                    </div>
+                    <p v-if="loading" class="t">Loading...</p>
+                    <p v-if="noMore && (archivesList && archivesList.length>10)" class="t">No more</p>
+                </div>
             </div>
         </div>
         <div class="slide_stretch_show" v-if="menuStretch">
@@ -276,7 +264,7 @@ export default {
                 } else {
                     _this.activeTree = '2'
                 }
-            }
+            } else if (_this.$route.name.indexOf('my_archives') > -1) _this.activeTree = _this.$route.params.name
         },
         getshareDialog (shareDialog) {
             this.shareDialog = shareDialog
@@ -407,9 +395,9 @@ export default {
                     _this.$message.error(error.message);
                     return false
                 }
-
+                _this.parmaRebuild.offset = 1
+                _this.load()
                 _this.$emit('getListBuckets');
-
             }).catch(function (error) {
                 console.log(error);
             });
@@ -596,7 +584,8 @@ export default {
       font-size: 0.2rem;
     }
   }
-  .fs3_backup {
+  .fs3_backup,
+  .fes-search {
     margin: 0.1rem 0 0;
     .introduce {
       margin: 0 0 0.05rem;
@@ -604,7 +593,8 @@ export default {
       background: #002a39;
       // font-family: 'm-semibold';
       font-weight: bold;
-      a {
+      a,
+      p {
         display: block;
         line-height: 3;
         font-size: 0.14rem;
@@ -614,11 +604,19 @@ export default {
           line-height: 3.5;
         }
       }
+      p {
+        color: #fff;
+      }
     }
     .introRouter {
       font-size: 0.14rem;
       @media screen and (max-width: 999px) {
         font-size: 13px;
+      }
+      &.ul-list {
+        max-height: 250px;
+        margin: 0 0 0.2rem;
+        overflow-y: auto;
       }
       a {
         display: block;
@@ -685,7 +683,7 @@ export default {
     .el-input /deep/ {
       display: block;
       width: calc(100% - 0.4rem);
-      margin: 0 0.2rem;
+      margin: 0 0.2rem 0.2rem;
       clear: both;
       .el-input__inner {
         padding-left: 25px;
@@ -711,9 +709,7 @@ export default {
       }
     }
     .el-row /deep/ {
-      margin-top: 0.2rem;
-      margin-left: 0;
-      margin-right: 0;
+      margin: 0;
       font-size: 0.13rem;
       // height: calc(100% - 1.3rem);
       // overflow: hidden;
@@ -737,11 +733,11 @@ export default {
           align-items: center;
         }
         i {
-          font-size: 0.18rem;
+          font-size: 0.16rem;
           margin-right: 0.08rem;
           color: rgba(255, 255, 255, 0.85);
           @media screen and (max-width: 999px) {
-            font-size: 16px;
+            font-size: 14px;
           }
         }
         .caozuo {
@@ -811,22 +807,23 @@ export default {
             }
           }
         }
+        &:hover,
+        &.active {
+          font-size: 0.14rem;
+          color: #7ecef4;
+          @media screen and (max-width: 999px) {
+            font-size: 13px;
+          }
+          i {
+            color: #7ecef4;
+          }
+        }
         &:hover {
           background: rgba(0, 0, 0, 0.1);
           .caozuo {
             opacity: 1;
+            color: #fff;
           }
-        }
-      }
-      .active {
-        background: rgba(0, 0, 0, 0.1);
-        font-size: 0.15rem;
-        color: #fff;
-        @media screen and (max-width: 999px) {
-          font-size: 13px;
-        }
-        i {
-          color: #fff;
         }
       }
     }

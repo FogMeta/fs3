@@ -18,7 +18,21 @@
             {{ scope.row.id }}
           </template>
         </el-table-column>
-        <el-table-column prop="plan_name" label="Backup Plan Name" width="180"></el-table-column>
+        <el-table-column prop="plan_name" label="Backup Plan Name" width="180">
+          <template slot-scope="scope">
+            {{scope.row.plan_name || '-'}}
+          </template>
+        </el-table-column>
+        <el-table-column prop="bucket" label="Bucket" width="120">
+          <template slot-scope="scope">
+            {{scope.row.bucket || '-'}}
+          </template>
+        </el-table-column>
+        <el-table-column prop="object_name" label="File name" width="160">
+          <template slot-scope="scope">
+            {{scope.row.object_name || '-'}}
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="Date Created" width="120">
           <template slot-scope="scope">
             {{ scope.row.created_at || '-' }}
@@ -38,7 +52,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="providers" label="Storage Providers" width="120">
+        <el-table-column prop="providers" label="Storage Providers" width="140">
           <template slot-scope="scope">
             <el-select v-model="scope.row.providersValue" placeholder="">
               <el-option v-for="item in scope.row.providers" :key="item" :label="item" :value="item">
@@ -79,7 +93,7 @@
         </el-table-column>
         <el-table-column prop="" label="Action" min-width="130">
           <template slot-scope="scope">
-            <el-button v-if="scope.row.status_msg && scope.row.status_msg.toLowerCase() != 'completed'" type="info" @click="dialogDis=true">Rebuild</el-button>
+            <el-button v-if="scope.row.status_msg.toLowerCase() != 'completed'" type="info" @click="dialogDis=true">Rebuild</el-button>
             <el-button v-else type="primary" @click="detailFun(scope.row)">Rebuild</el-button>
           </template>
         </el-table-column>
@@ -391,11 +405,10 @@ export default {
           let json = response.data
           if (json.status == 'success') {
             _this.parma.total = json.data.total
-            _this.tableData = json.data.list || []
-            _this.tableData.map(item => {
+            json.data.list.map(item => {
               item.visible = false
               item.dataVisible = false
-              item.providersValue = ''
+              item.providersValue = item.providers && item.providers.length > 0 ? item.providers[0] : ''
               item.created_at =
                 item.created_at ?
                   moment(new Date(parseInt(item.created_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
@@ -407,6 +420,7 @@ export default {
                   :
                   '-'
             })
+            _this.tableData = json.data.list || []
 
             setTimeout(function () {
               _this.sort(_this.tableData)
@@ -440,8 +454,8 @@ export default {
             _this.tableData_2 = json.data.list || []
             _this.tableData_2.map(item => {
               item.visible = false
-              item.created_at = moment(new Date(parseInt(item.created_at))).format("YYYY-MM-DD HH:mm:ss")
-              item.updated_at = moment(new Date(parseInt(item.updated_at))).format("YYYY-MM-DD HH:mm:ss")
+              item.created_at = moment(new Date(parseInt(item.created_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
+              item.updated_at = moment(new Date(parseInt(item.updated_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
             })
 
             setTimeout(function () {

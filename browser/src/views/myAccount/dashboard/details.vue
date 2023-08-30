@@ -38,7 +38,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="providers" label="Storage Providers" width="120">
+        <el-table-column prop="providers" label="Storage Providers" width="140">
           <template slot-scope="scope">
             <el-select v-model="scope.row.providersValue" placeholder="">
               <el-option v-for="item in scope.row.providers" :key="item" :label="item" :value="item">
@@ -79,7 +79,7 @@
         </el-table-column>
         <el-table-column prop="" label="Action" min-width="130">
           <template slot-scope="scope">
-            <el-button v-if="scope.row.status_msg && scope.row.status_msg.toLowerCase() != 'completed'" type="info" @click="dialogDis=true">Rebuild</el-button>
+            <el-button v-if="scope.row.status_msg.toLowerCase() != 'completed'" type="info" @click="dialogDis=true">Rebuild</el-button>
             <el-button v-else type="primary" @click="detailFun(scope.row)">Rebuild</el-button>
           </template>
         </el-table-column>
@@ -387,11 +387,10 @@ export default {
           let json = response.data
           if (json.status == 'success') {
             _this.parma.total = json.data.total
-            _this.tableData = json.data.list || []
-            _this.tableData.map(item => {
+            json.data.list.map(item => {
               item.visible = false
               item.dataVisible = false
-              item.providersValue = ''
+              item.providersValue = item.providers && item.providers.length > 0 ? item.providers[0] : ''
               item.created_at =
                 item.created_at ?
                   moment(new Date(parseInt(item.created_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
@@ -403,6 +402,7 @@ export default {
                   :
                   '-'
             })
+            _this.tableData = json.data.list || []
 
             setTimeout(function () {
               _this.sort(_this.tableData)
