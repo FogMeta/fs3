@@ -529,7 +529,7 @@ func RecordRemoveBucketInfo(accessKey, bucket string) error {
 		Size:          backup.Size,
 		VersionID:     backup.VersionID,
 	}
-	return pdb.Create(remove).Error
+	return pdb.Create(&remove).Error
 }
 
 type PsqlBucketObjectRemove struct {
