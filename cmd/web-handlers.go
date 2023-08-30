@@ -8610,7 +8610,7 @@ func (web *webAPIHandlers) S3ImportList(w http.ResponseWriter, r *http.Request) 
 		total += offset
 	} else {
 		var count int64
-		if err := scheduler.GetPDB().Model(scheduler.PsqlBucketImportS3{}).Scan(&count).Error; err != nil {
+		if err := scheduler.GetPDB().Model(scheduler.PsqlBucketImportS3{}).Count(&count).Error; err != nil {
 			logs.GetLogger().Error(err)
 			writeWebErrorResponse(w, err)
 			return
@@ -8931,7 +8931,7 @@ func (web *webAPIHandlers) BackupList(w http.ResponseWriter, r *http.Request) {
 
 func backupInfo(accessKey, bucket, object string, offset, limit int) (backups []*scheduler.PsqlBucketObjectBackup, total int, err error) {
 	backup := scheduler.PsqlBucketObjectBackup{UserAccessKey: accessKey, BucketName: bucket, ObjectName: object}
-	if err = scheduler.GetPDB().Model(backup).Where(backup).Offset(offset).Limit(limit).Find(&backups).Error; err != nil {
+	if err = scheduler.GetPDB().Model(backup).Where(backup).Offset(offset).Order("created_at desc").Limit(limit).Find(&backups).Error; err != nil {
 		return
 	}
 	total = len(backups)
@@ -8939,7 +8939,7 @@ func backupInfo(accessKey, bucket, object string, offset, limit int) (backups []
 		total += offset
 	} else {
 		var count int64
-		if err = scheduler.GetPDB().Model(backup).Where(backup).Scan(&count).Error; err != nil {
+		if err = scheduler.GetPDB().Model(backup).Where(backup).Count(&count).Error; err != nil {
 			return
 		}
 		total = int(count)
