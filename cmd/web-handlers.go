@@ -8901,6 +8901,8 @@ func (web *webAPIHandlers) BackupList(w http.ResponseWriter, r *http.Request) {
 		list = append(list, &BackupInfo{
 			ID:         backup.ID,
 			PlanName:   backup.PlanName,
+			Bucket:     backup.BucketName,
+			ObjectName: backup.ObjectName,
 			Duration:   backup.Duration,
 			Size:       backup.Size,
 			DataCID:    backup.PayloadCID,
@@ -9019,6 +9021,8 @@ type BackupReq struct {
 type BackupInfo struct {
 	ID         uint     `json:"id"`
 	PlanName   string   `json:"plan_name"`
+	Bucket     string   `json:"bucket"`
+	ObjectName string   `json:"object_name"`
 	Size       int64    `json:"size"`
 	DataCID    string   `json:"data_cid"`
 	Providers  []string `json:"providers"`
