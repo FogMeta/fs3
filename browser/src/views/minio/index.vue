@@ -125,7 +125,7 @@
       <el-table :data="tableData" stripe style="width: 100%" :row-key="getRowKeys" :expand-row-keys="expands" @expand-change="exChange">
         <el-table-column type="expand">
           <template slot-scope="props">
-            <el-table :data="exChangeList" stripe style="width: 100%" class="demo-table-expand">
+            <el-table :data="exChangeList" v-loading="exChangeLoad" stripe style="width: 100%" class="demo-table-expand">
               <el-table-column prop="created_at" label="Date">
                 <template slot-scope="scope">
                   {{exChangeList[scope.$index].created_at}}
@@ -156,8 +156,11 @@
               </el-table-column>
               <el-table-column prop="providers" label="Storage Providers">
                 <template slot-scope="scope">
-                  <div class="hot-cold-box">
-                    <span v-for="miner in exChangeList[scope.$index].providers" :key="miner">{{miner}} &nbsp;&nbsp;</span>
+                  <div class="hot-cold-box flex">
+                    <p class="flex" v-for="(miner, mIndex) in exChangeList[scope.$index].providers" :key="mIndex">
+                      {{miner}}
+                      <span v-if="mIndex<exChangeList[scope.$index].providers.length-1" class="span">, </span>
+                    </p>
                   </div>
                 </template>
               </el-table-column>
@@ -440,6 +443,7 @@ export default {
         return row.name
       },
       exChangeList: [],
+      exChangeLoad: false,
       searchValue: '',
       changePass: false,
       addr: '',
@@ -580,6 +584,7 @@ export default {
     },
     tableJson (name) {
       let _this = this
+      _this.exChangeLoad = true
       _this.exChangeList = []
 
       let postUrl = _this.data_api + `/minio/backup/` + _this.currentBucket + `/` + name
@@ -605,12 +610,11 @@ export default {
             })
           }
           _this.exChangeList = dataAll
-        } else {
-          _this.$message.error(json.message);
-          return false
-        }
+        } else _this.$message.error(json.message)
+        _this.exChangeLoad = false
       }).catch(function (error) {
         console.log(error);
+        _this.exChangeLoad = false
       });
     },
     copyLink (text) {
@@ -1829,6 +1833,13 @@ export default {
             img {
               display: inline-block;
             }
+          }
+        }
+        .flex {
+          display: flex;
+          flex-wrap: wrap;
+          .span {
+            margin: 0 5px 0 0;
           }
         }
       }
