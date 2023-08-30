@@ -12,7 +12,7 @@
         <el-table-column prop="bucket" label="Bucket Name" width="180"></el-table-column>
         <el-table-column prop="file_name" label="File Name" width="120">
           <template slot-scope="scope">
-            {{ scope.row.file_name }}
+            {{ scope.row.file_name || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="removed_at" label="Date Removed" width="120">
@@ -25,7 +25,7 @@
             <div class="hot-cold-box">
               <el-popover placement="top" width="160" trigger="hover" v-model="scope.row.dataVisible">
                 <div class="upload_form_right">
-                  <p>{{scope.row.data_cid}}</p>
+                  <p>{{scope.row.data_cid || '-'}}</p>
                 </div>
                 <el-button slot="reference" @click="copyTextToClipboard(scope.row.data_cid)">
                   <img src="@/assets/images/copy.png" alt=""> {{scope.row.data_cid}}
@@ -62,7 +62,8 @@
         </el-table-column>
         <el-table-column prop="" label="Action" min-width="130">
           <template slot-scope="scope">
-            <el-button type="info" @click="rebuildAction(scope.row)">Rebuild</el-button>
+            <el-button v-if="scope.row.status_msg.toLowerCase() != 'completed'" type="info" disabled>Rebuild</el-button>
+            <el-button v-else type="primary" @click="rebuildAction(scope.row)">Rebuild</el-button>
           </template>
         </el-table-column>
       </el-table>

@@ -186,7 +186,7 @@ export default {
             label: "500",
           },
         ],
-        verified: '2',
+        verified: '1',
         fastRetirval: '1',
         textarea: 'lotus client',
         dealCID: '',
@@ -342,7 +342,7 @@ export default {
               _this.$message.error(json.message);
               return false
             }
-
+            _this.getDiglogChange()
           }).catch(function (error) {
             console.log(error);
           });
@@ -405,7 +405,7 @@ export default {
               _this.$message.error(json.message);
               return false
             }
-
+            _this.getDiglogChange()
           }).catch(function (error) {
             console.log(error);
           });

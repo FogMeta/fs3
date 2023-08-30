@@ -108,7 +108,7 @@ export default {
       ruleForm: {
         name: '',
         price: '',
-        verified: '2',
+        verified: '1',
         fastRetirval: '1',
         frequency: '1',
         frequencyOptions: [{

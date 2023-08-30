@@ -93,7 +93,7 @@
         </el-table-column>
         <el-table-column prop="" label="Action" min-width="130">
           <template slot-scope="scope">
-            <el-button v-if="scope.row.status_msg.toLowerCase() != 'completed'" type="info" @click="dialogDis=true">Rebuild</el-button>
+            <el-button v-if="scope.row.status_msg.toLowerCase() != 'completed'" type="info" disabled>Rebuild</el-button>
             <el-button v-else type="primary" @click="detailFun(scope.row)">Rebuild</el-button>
           </template>
         </el-table-column>
