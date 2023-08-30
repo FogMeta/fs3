@@ -8891,12 +8891,12 @@ func (web *webAPIHandlers) BackupList(w http.ResponseWriter, r *http.Request) {
 		if backup.Providers != "" {
 			providers = strings.Split(backup.Providers, ",")
 		}
-		canRebuild := scheduler.CanRebuild(backup.Status)
+		canRebuild := scheduler.CanRebuild(backup)
 		msg := ""
 		if canRebuild {
 			msg = "completed"
 		} else {
-			msg = scheduler.BackupStatusMsg(backup.Status)
+			msg = scheduler.BackupStatusMsg(backup)
 		}
 		list = append(list, &BackupInfo{
 			ID:         backup.ID,

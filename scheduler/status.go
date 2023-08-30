@@ -70,8 +70,9 @@ var RebuildStatusMsg = map[int]string{
 	StatusRebuildRestored:          "restored",
 }
 
-func BackupStatusMsg(status int) string {
-	if CanRebuild(status) {
+func BackupStatusMsg(backup *PsqlBucketObjectBackup) string {
+	status := backup.Status
+	if CanRebuild(backup) {
 		return "completed"
 	}
 	if status > 0 && status%10 == 0 {

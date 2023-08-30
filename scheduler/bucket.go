@@ -396,7 +396,6 @@ func syncBackupInfo(backup *PsqlBucketObjectBackup) error {
 		return err
 	}
 
-	status = resp.Status
 	if err = pdb.Model(backup).Updates(&PsqlBucketObjectBackup{
 		PayloadCID: resp.PayloadCID,
 		PayloadURL: resp.PayloadURL,
@@ -406,24 +405,24 @@ func syncBackupInfo(backup *PsqlBucketObjectBackup) error {
 		logs.GetLogger().Error(err)
 		return err
 	}
-	activeMinerMap := make(map[string]bool)
+	minerMap := make(map[string]bool)
 	for _, fd := range resp.FileDescList {
 		miners, err := syncBackupDetail(backup.ID, fd)
 		if err != nil {
 			logs.GetLogger().Error(err)
 		}
 		for _, miner := range miners {
-			activeMinerMap[miner] = true
+			minerMap[miner] = true
 		}
 	}
 
-	activeMiners := make([]string, 0, len(activeMinerMap))
-	for miner := range activeMinerMap {
-		activeMiners = append(activeMiners, miner)
+	miners := make([]string, 0, len(minerMap))
+	for miner := range minerMap {
+		miners = append(miners, miner)
 	}
-	sort.Strings(activeMiners)
-	if len(activeMiners) > 0 {
-		providers := strings.Join(activeMiners, ",")
+	sort.Strings(miners)
+	if len(miners) > 0 {
+		providers := strings.Join(miners, ",")
 		if providers != backup.Providers {
 			pdb.Model(backup).Updates(PsqlBucketObjectBackup{Providers: providers})
 		}
@@ -547,7 +546,8 @@ type PsqlBucketObjectRebuild struct {
 	UpdatedAt     time.Time
 }
 
-func CanRebuild(status int) bool {
+func CanRebuild(backup *PsqlBucketObjectBackup) bool {
+	status := backup.Status
 	if status < 44 {
 		return false
 	}
