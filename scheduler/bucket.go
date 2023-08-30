@@ -396,7 +396,7 @@ func syncBackupInfo(backup *PsqlBucketObjectBackup) error {
 		return err
 	}
 
-	backup.Status = resp.Status
+	status = resp.Status
 	if err = pdb.Model(backup).Updates(&PsqlBucketObjectBackup{
 		PayloadCID: resp.PayloadCID,
 		PayloadURL: resp.PayloadURL,
@@ -408,11 +408,11 @@ func syncBackupInfo(backup *PsqlBucketObjectBackup) error {
 	}
 	activeMinerMap := make(map[string]bool)
 	for _, fd := range resp.FileDescList {
-		activeMiners, err := syncBackupDetail(backup.ID, fd)
+		miners, err := syncBackupDetail(backup.ID, fd)
 		if err != nil {
 			logs.GetLogger().Error(err)
 		}
-		for _, miner := range activeMiners {
+		for _, miner := range miners {
 			activeMinerMap[miner] = true
 		}
 	}
@@ -431,7 +431,7 @@ func syncBackupInfo(backup *PsqlBucketObjectBackup) error {
 	return nil
 }
 
-func syncBackupDetail(id uint, fd *FileDesc) (activeMiners []string, err error) {
+func syncBackupDetail(id uint, fd *FileDesc) (miners []string, err error) {
 	bs := &PsqlBucketObjectBackupSlice{
 		BackupID:   id,
 		PayloadCID: fd.PayloadCid,
@@ -455,9 +455,9 @@ func syncBackupDetail(id uint, fd *FileDesc) (activeMiners []string, err error) 
 
 	// deals
 	for _, deal := range fd.Deals {
-		if deal.StorageStatus == "StorageDealActive" {
-			activeMiners = append(activeMiners, deal.MinerFid)
-		}
+		// if deal.StorageStatus == "StorageDealActive" {
+		miners = append(miners, deal.MinerFid)
+		// }
 		// query deal
 		bsd := &PsqlBucketObjectBackupSliceDeal{
 			BackUpID: bs.ID,
@@ -468,6 +468,7 @@ func syncBackupDetail(id uint, fd *FileDesc) (activeMiners []string, err error) 
 			bsd.DealID = deal.DealId
 			bsd.DealCID = deal.DealCid
 			bsd.Cost = deal.Cost
+			bsd.StorageStatus = deal.StorageStatus
 			if err = pdb.Create(bsd).Error; err != nil {
 				logs.GetLogger().Error(err)
 			}
@@ -544,4 +545,30 @@ type PsqlBucketObjectRebuild struct {
 	Status        int
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+}
+
+func CanRebuild(status int) bool {
+	if status < 44 {
+		return false
+	}
+	if status >= 45 {
+		return true
+	}
+	// deal := PsqlBucketObjectBackupSliceDeal{BackUpID: backup.ID, StorageStatus: "StorageDealActive"}
+	var deals []BackupDealCount
+	if err := pdb.Raw("SELECT payload_cid, count(*) AS cnt FROM psql_bucket_object_backup_slice_deals WHERE backup_id = ? AND storage_status = ?", backup.ID, "StorageDealActive").Find(&deals); err != nil {
+		return false
+	}
+
+	for _, deal := range deals {
+		if deal.Cnt == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+type BackupDealCount struct {
+	PayloadCID string `gorm:"column:payload_cid"`
+	Cnt        int
 }

@@ -8891,6 +8891,13 @@ func (web *webAPIHandlers) BackupList(w http.ResponseWriter, r *http.Request) {
 		if backup.Providers != "" {
 			providers = strings.Split(backup.Providers, ",")
 		}
+		canRebuild := scheduler.CanRebuild(backup.Status)
+		msg := ""
+		if canRebuild {
+			msg = "completed"
+		} else {
+			msg = scheduler.BackupStatusMsg(backup.Status)
+		}
 		list = append(list, &BackupInfo{
 			ID:         backup.ID,
 			PlanName:   backup.PlanName,
@@ -8901,8 +8908,8 @@ func (web *webAPIHandlers) BackupList(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:  backup.CreatedAt.Unix(),
 			UpdatedAt:  backup.UpdatedAt.Unix(),
 			Status:     backup.Status,
-			StatusMsg:  backup.StatusMsg,
-			CanRebuild: backup.Status >= 45,
+			StatusMsg:  msg,
+			CanRebuild: canRebuild,
 		})
 	}
 
@@ -9278,7 +9285,7 @@ type BucketTab struct {
 
 func (web *webAPIHandlers) ListArchiveBuckets(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "ListArchiveBuckets")
-	claims, permissionAllow, err := web.verify(w, r)
+	claims, _, err := web.verify(w, r)
 	if err != nil {
 		return
 	}
@@ -9293,18 +9300,17 @@ func (web *webAPIHandlers) ListArchiveBuckets(w http.ResponseWriter, r *http.Req
 
 	db := scheduler.GetPDB()
 	var buckets []string
-	if err := db.Model(scheduler.PsqlBucketObjectRemove{}).Select("bucket_name").Distinct("bucket_name").Offset(offset).Limit(limit).Scan(&buckets).Error; err != nil {
+	remove := scheduler.PsqlBucketObjectRemove{UserAccessKey: claims.AccessKey}
+	if err := db.Model(remove).Select("bucket_name").Distinct("bucket_name").Where(remove).Offset(offset).Limit(limit).Scan(&buckets).Error; err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
 		return
 	}
 	list := make([]*BucketTab, 0, len(buckets))
 	for _, bucket := range buckets {
-		if permissionAllow(bucket, "") {
-			list = append(list, &BucketTab{
-				Bucket: bucket,
-			})
-		}
+		list = append(list, &BucketTab{
+			Bucket: bucket,
+		})
 	}
 
 	total := len(list)
@@ -9318,11 +9324,6 @@ func (web *webAPIHandlers) ListArchiveBuckets(w http.ResponseWriter, r *http.Req
 			return
 		}
 		total = int(count)
-	}
-	if len(list) < limit {
-		list = append(list, &BucketTab{
-			Bucket: "Other",
-		})
 	}
 
 	w.WriteHeader(http.StatusOK)

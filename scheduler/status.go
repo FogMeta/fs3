@@ -47,7 +47,7 @@ const (
 
 var RebuildStatusMsg = map[int]string{
 	StatusRebuildReady:             "ready",
-	StatusRebuildSuccess:           "success",
+	StatusRebuildSuccess:           "completed",
 	StatusRebuildCarDownloadFailed: "download failed",
 	StatusRebuildCarDownloadReady:  "download ready",
 	StatusRebuildCarDownloading:    "downloading",
@@ -68,4 +68,17 @@ var RebuildStatusMsg = map[int]string{
 	StatusRebuildRestoreReady:      "restore ready",
 	StatusRebuildRestoring:         "restoring",
 	StatusRebuildRestored:          "restored",
+}
+
+func BackupStatusMsg(status int) string {
+	if CanRebuild(status) {
+		return "completed"
+	}
+	if status > 0 && status%10 == 0 {
+		return "failed"
+	}
+	if status == 0 || status == 11 {
+		return "ready"
+	}
+	return "backing up"
 }
