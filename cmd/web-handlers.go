@@ -309,7 +309,7 @@ type RemoveBucketArgs struct {
 }
 
 // DeleteBucket - removes a bucket, must be empty.
-func (web *webAPIHandlers) DeleteBucket(r *http.Request, args *RemoveBucketArgs, reply *WebGenericRep) error {
+func (web *webAPIHandlers) DeleteBucket(r *http.Request, args *RemoveBucketArgs, reply *WebGenericRep) (err error) {
 	ctx := newWebContext(r, args, "WebDeleteBucket")
 	objectAPI := web.ObjectAPI()
 	if objectAPI == nil {
@@ -338,6 +338,12 @@ func (web *webAPIHandlers) DeleteBucket(r *http.Request, args *RemoveBucketArgs,
 	}
 
 	reply.UIVersion = Version
+
+	defer func() {
+		if err == nil {
+			scheduler.RecordRemoveBucketInfo(claims.AccessKey, args.BucketName)
+		}
+	}()
 
 	if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
 		sr, err := globalDNSConfig.Get(args.BucketName)

@@ -504,9 +504,32 @@ func RecordRemoveObjectInfo(accessKey, bucket string, objects []string) error {
 			BackUpID:      backup.ID,
 			PayloadCID:    backup.PayloadCID,
 			PayloadURL:    backup.PayloadURL,
+			IsDir:         backup.IsDir,
+			Size:          backup.Size,
+			VersionID:     backup.VersionID,
 		})
 	}
 	return pdb.CreateInBatches(records, len(records)).Error
+}
+
+func RecordRemoveBucketInfo(accessKey, bucket string) error {
+	backup := PsqlBucketObjectBackup{
+		BucketName: bucket,
+	}
+	if err := pdb.Where(backup).Where("object_name = ?", "").First(&backup).Error; err != nil {
+		logs.GetLogger().Error(err)
+	}
+	remove := PsqlBucketObjectRemove{
+		UserAccessKey: accessKey,
+		BucketName:    bucket,
+		BackUpID:      backup.ID,
+		PayloadCID:    backup.PayloadCID,
+		PayloadURL:    backup.PayloadURL,
+		IsDir:         backup.IsDir,
+		Size:          backup.Size,
+		VersionID:     backup.VersionID,
+	}
+	return pdb.Create(remove).Error
 }
 
 type PsqlBucketObjectRemove struct {
