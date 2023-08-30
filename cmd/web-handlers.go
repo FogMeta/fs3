@@ -8931,7 +8931,7 @@ func (web *webAPIHandlers) BackupList(w http.ResponseWriter, r *http.Request) {
 
 func backupInfo(accessKey, bucket, object string, offset, limit int) (backups []*scheduler.PsqlBucketObjectBackup, total int, err error) {
 	backup := scheduler.PsqlBucketObjectBackup{UserAccessKey: accessKey, BucketName: bucket, ObjectName: object}
-	if err = scheduler.GetPDB().Model(backup).Where(backup).Offset(offset).Order("created_at desc").Limit(limit).Find(&backups).Error; err != nil {
+	if err = scheduler.GetPDB().Model(backup).Where(backup).Offset(offset).Order("id desc").Limit(limit).Find(&backups).Error; err != nil {
 		return
 	}
 	total = len(backups)
