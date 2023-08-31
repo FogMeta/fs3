@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"sort"
 
 	"github.com/codingsince1985/checksum"
 	"github.com/filedrive-team/go-graphsplit"
@@ -8990,7 +8991,7 @@ func (web *webAPIHandlers) RebuildStat(w http.ResponseWriter, r *http.Request) {
 	db := scheduler.GetPDB()
 	rebuild := scheduler.PsqlBucketObjectRebuild{UserAccessKey: claims.AccessKey}
 	var statusList []int
-	if err = db.Model(scheduler.PsqlBucketObjectRebuild{}).Where(rebuild).Scan(&statusList).Error; err != nil {
+	if err = db.Model(scheduler.PsqlBucketObjectRebuild{}).Select("status").Where(rebuild).Scan(&statusList).Error; err != nil {
 		writeWebErrorResponse(w, err)
 		return
 	}
@@ -9241,7 +9242,7 @@ func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Requ
 	db := scheduler.GetPDB()
 	var rebuilds []*scheduler.PsqlBucketObjectRebuild
 	rebuild := scheduler.PsqlBucketObjectRebuild{UserAccessKey: claims.AccessKey}
-	if err := db.Model(rebuild).Offset(offset).Limit(limit).Find(&rebuilds).Error; err != nil {
+	if err := db.Model(rebuild).Where(rebuild).Order("id desc").Offset(offset).Limit(limit).Find(&rebuilds).Error; err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
 		return
@@ -9316,6 +9317,7 @@ func (web *webAPIHandlers) ListArchiveBuckets(w http.ResponseWriter, r *http.Req
 		writeWebErrorResponse(w, err)
 		return
 	}
+	sort.Strings(buckets)
 	list := make([]*BucketTab, 0, len(buckets))
 	for _, bucket := range buckets {
 		list = append(list, &BucketTab{
@@ -9366,7 +9368,7 @@ func (web *webAPIHandlers) ListArchiveObjects(w http.ResponseWriter, r *http.Req
 		BucketName: bucket,
 	}
 	var removeObjs []*scheduler.PsqlBucketObjectRemove
-	if err := db.Model(remove).Where(remove).Offset(offset).Limit(limit).Find(&removeObjs).Error; err != nil {
+	if err := db.Model(remove).Where(remove).Order("id desc").Offset(offset).Limit(limit).Find(&removeObjs).Error; err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
 		return
