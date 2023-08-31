@@ -71,7 +71,7 @@ func RebuildStatusMsg(rebuild *PsqlBucketObjectRebuild) string {
 	if status > 0 && status%10 == 0 {
 		return "failed"
 	}
-	if status == 1 {
+	if status == 1 || status == StatusRebuildRestored {
 		return "completed"
 	}
 	if status == 0 {
