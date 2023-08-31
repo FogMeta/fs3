@@ -9101,6 +9101,14 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 		writeWebErrorResponse(w, err)
 		return
 	}
+	if data.Status == 1 {
+		data.Status = scheduler.StatusRebuildStored
+	}
+
+	payloadURL := backup.PayloadURL
+	if data.PayloadURL != "" {
+		payloadURL = data.PayloadURL
+	}
 
 	rebuild := &scheduler.PsqlBucketObjectRebuild{
 		BackupID:   backup.ID,
@@ -9116,6 +9124,9 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 		rebuild.PlanName = backup.PlanName
 		rebuild.BackupID = backup.ID
 		rebuild.DueAt = data.DueAt
+		rebuild.PayloadCID = backup.PayloadCID
+		rebuild.PayloadURL = payloadURL
+		rebuild.Providers = strings.Join(data.Providers, ",")
 
 		if err = db.Create(rebuild).Error; err != nil {
 			logs.GetLogger().Error(err)
@@ -9124,15 +9135,15 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 		}
 	} else {
 		rebuild.Status = data.Status
-		if data.Status == 1 {
-			rebuild.Status = scheduler.StatusRebuildStored
-		}
 		rebuild.PayloadCID = data.PayloadCID
 		rebuild.PayloadURL = data.PayloadURL
+		rebuild.Providers = strings.Join(data.Providers, ",")
 		err := db.Model(rebuild).Updates(scheduler.PsqlBucketObjectRebuild{
 			Status:     data.Status,
 			PayloadCID: data.PayloadCID,
 			PayloadURL: data.PayloadURL,
+			Providers:  rebuild.Providers,
+			DueAt:      data.DueAt,
 		}).Error
 		if err != nil {
 			logs.GetLogger().Error(err)
