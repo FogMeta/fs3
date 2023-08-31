@@ -192,7 +192,7 @@ func Init() {
 }
 
 func GetPDB() *gorm.DB {
-	return pdb
+	return pdb.Debug()
 }
 
 const (

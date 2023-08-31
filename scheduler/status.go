@@ -37,38 +37,20 @@ const (
 	StatusRebuildStored
 )
 
+const (
+	StatusRebuildDownloadFailed = iota + 150
+	StatusRebuildDownloadReady
+	StatusRebuildDownloading
+	StatusRebuildDownloaded
+)
+
 // restore to filesystem
 const (
-	StatusRebuildRestoreFailed = iota + 150
+	StatusRebuildRestoreFailed = iota + 160
 	StatusRebuildRestoreReady
 	StatusRebuildRestoring
 	StatusRebuildRestored
 )
-
-var RebuildStatusMsg = map[int]string{
-	StatusRebuildReady:             "ready",
-	StatusRebuildSuccess:           "completed",
-	StatusRebuildCarDownloadFailed: "download failed",
-	StatusRebuildCarDownloadReady:  "download ready",
-	StatusRebuildCarDownloading:    "downloading",
-	StatusRebuildCarDownloaded:     "downloaded",
-	StatusRebuildRetrieveFailed:    "retrieve failed",
-	StatusRebuildRetrieveReady:     "retrieve ready",
-	StatusRebuildRetrieving:        "retrieving",
-	StatusRebuildRetrieved:         "retrieved",
-	StatusRebuildCarRestoreFailed:  "car restore failed",
-	StatusRebuildCarRestoreReady:   "car restore ready",
-	StatusRebuildCarRestoring:      "car restoring",
-	StatusRebuildCarRestored:       "car restored",
-	StatusRebuildStoreFailed:       "store failed",
-	StatusRebuildStoreReady:        "store ready",
-	StatusRebuildStoring:           "storing",
-	StatusRebuildStored:            "stored",
-	StatusRebuildRestoreFailed:     "restore failed",
-	StatusRebuildRestoreReady:      "restore ready",
-	StatusRebuildRestoring:         "restoring",
-	StatusRebuildRestored:          "restored",
-}
 
 func BackupStatusMsg(backup *PsqlBucketObjectBackup) string {
 	status := backup.Status
@@ -82,4 +64,18 @@ func BackupStatusMsg(backup *PsqlBucketObjectBackup) string {
 		return "ready"
 	}
 	return "backing up"
+}
+
+func RebuildStatusMsg(rebuild *PsqlBucketObjectRebuild) string {
+	status := rebuild.Status
+	if status > 0 && status%10 == 0 {
+		return "failed"
+	}
+	if status == 1 {
+		return "completed"
+	}
+	if status == 0 {
+		return "ready"
+	}
+	return "rebuilding"
 }

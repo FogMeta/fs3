@@ -9124,6 +9124,9 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 		}
 	} else {
 		rebuild.Status = data.Status
+		if data.Status == 1 {
+			rebuild.Status = scheduler.StatusRebuildStored
+		}
 		rebuild.PayloadCID = data.PayloadCID
 		rebuild.PayloadURL = data.PayloadURL
 		err := db.Model(rebuild).Updates(scheduler.PsqlBucketObjectRebuild{
@@ -9144,7 +9147,7 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 		PlanID:    rebuild.PlanID,
 		PlanName:  rebuild.PlanName,
 		Status:    rebuild.Status,
-		StatusMsg: scheduler.RebuildStatusMsg[rebuild.Status],
+		StatusMsg: scheduler.RebuildStatusMsg(&rebuild),
 		CreatedAt: rebuild.CreatedAt.Unix(),
 		UpdatedAt: rebuild.UpdatedAt.Unix(),
 	}})
@@ -9216,7 +9219,7 @@ func (web *webAPIHandlers) RebuildObjectInfo(w http.ResponseWriter, r *http.Requ
 		DownloadURL: data.PayloadURL,
 		CreatedAt:   data.CreatedAt,
 		UpdatedAt:   rebuild.UpdatedAt.Unix(),
-		StatusMsg:   scheduler.RebuildStatusMsg[rebuild.Status],
+		StatusMsg:   scheduler.RebuildStatusMsg(&rebuild),
 	}})
 	w.Write(b)
 }
@@ -9278,7 +9281,7 @@ func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Requ
 			DownloadURL: rebuild.PayloadURL,
 			CreatedAt:   rebuild.CreatedAt.Unix(),
 			UpdatedAt:   rebuild.UpdatedAt.Unix(),
-			StatusMsg:   scheduler.RebuildStatusMsg[rebuild.Status],
+			StatusMsg:   scheduler.RebuildStatusMsg(rebuild),
 		})
 	}
 
