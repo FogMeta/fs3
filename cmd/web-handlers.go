@@ -9147,7 +9147,7 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 		PlanID:    rebuild.PlanID,
 		PlanName:  rebuild.PlanName,
 		Status:    rebuild.Status,
-		StatusMsg: scheduler.RebuildStatusMsg(&rebuild),
+		StatusMsg: scheduler.RebuildStatusMsg(rebuild),
 		CreatedAt: rebuild.CreatedAt.Unix(),
 		UpdatedAt: rebuild.UpdatedAt.Unix(),
 	}})
