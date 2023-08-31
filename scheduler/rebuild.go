@@ -105,12 +105,12 @@ func syncRebuildInfo(rebuild *PsqlBucketObjectRebuild) (err error) {
 		logs.GetLogger().Error(err)
 		return
 	}
-	if status < StatusRebuildStored {
-		logs.GetLogger().Infof("rebuild status : %d, wait rebuild\n", status)
+	if rebuild.Status < StatusRebuildStored {
+		logs.GetLogger().Infof("rebuild status : %d, wait rebuild\n", rebuild.Status)
 		return
 	}
 
-	logs.GetLogger().Info("rebuild status :", status)
+	logs.GetLogger().Info("rebuild status :", rebuild.Status)
 	if data.PayloadURL == "" {
 		return errors.New("invalid payload url")
 	}
