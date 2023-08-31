@@ -9102,11 +9102,11 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	rebuild := scheduler.PsqlBucketObjectRebuild{
+	rebuild := &scheduler.PsqlBucketObjectRebuild{
 		BackupID:   backup.ID,
 		ObjectName: req.Object,
 	}
-	if err := db.Where(rebuild).First(&rebuild).Error; err != nil {
+	if err := db.Where(rebuild).First(rebuild).Error; err != nil {
 		// insert record
 		rebuild.UserAccessKey = claims.AccessKey
 		rebuild.BucketName = backup.BucketName
