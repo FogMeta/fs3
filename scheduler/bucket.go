@@ -474,10 +474,13 @@ func syncBackupDetail(id uint, fd *FileDesc) (miners []string, err error) {
 		}
 
 		// update
-		if bsd.DealID != deal.DealId || bsd.DealCID != deal.DealCid {
+		if bsd.DealID != deal.DealId || bsd.DealCID != deal.DealCid || bsd.StorageStatus != deal.StorageStatus {
 			if err = pdb.Model(bsd).Updates(PsqlBucketObjectBackupSliceDeal{
-				DealID:  deal.DealId,
-				DealCID: deal.DealCid,
+				DealID:        deal.DealId,
+				DealCID:       deal.DealCid,
+				MinerID:       deal.MinerFid,
+				StorageStatus: deal.StorageStatus,
+				Cost:          deal.Cost,
 			}).Error; err != nil {
 				return
 			}
@@ -579,7 +582,7 @@ func CanRebuild(backup *PsqlBucketObjectBackup) bool {
 	}
 	// deal := PsqlBucketObjectBackupSliceDeal{BackUpID: backup.ID, StorageStatus: "StorageDealActive"}
 	var deals []BackupDealCount
-	if err := pdb.Raw("SELECT payload_cid, count(*) AS cnt FROM psql_bucket_object_backup_slice_deals WHERE backup_id = ? AND storage_status = ?", backup.ID, "StorageDealActive").Group("payload_cid").Find(&deals); err != nil {
+	if err := pdb.Raw("SELECT payload_cid, count(*) AS cnt FROM psql_bucket_object_backup_slice_deals WHERE backup_id = ? AND storage_status = ? GROUP BY payload_cid", backup.ID, "StorageDealActive").Find(&deals); err != nil {
 		return false
 	}
 
