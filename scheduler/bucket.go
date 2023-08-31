@@ -579,7 +579,7 @@ func CanRebuild(backup *PsqlBucketObjectBackup) bool {
 	}
 	// deal := PsqlBucketObjectBackupSliceDeal{BackUpID: backup.ID, StorageStatus: "StorageDealActive"}
 	var deals []BackupDealCount
-	if err := pdb.Raw("SELECT payload_cid, count(*) AS cnt FROM psql_bucket_object_backup_slice_deals WHERE backup_id = ? AND storage_status = ?", backup.ID, "StorageDealActive").Find(&deals); err != nil {
+	if err := pdb.Raw("SELECT payload_cid, count(*) AS cnt FROM psql_bucket_object_backup_slice_deals WHERE backup_id = ? AND storage_status = ?", backup.ID, "StorageDealActive").Group("payload_cid").Find(&deals); err != nil {
 		return false
 	}
 
