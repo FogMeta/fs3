@@ -9435,6 +9435,32 @@ type ArchiveRemoveObject struct {
 	CanRebuild bool   `json:"can_rebuild"`
 }
 
+func (web *webAPIHandlers) RemoveArchiveObject(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "RemoveArchiveObject")
+	claims, _, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+
+	vars := mux.Vars(r)
+	bucket := vars["bucket"]
+	object := vars["object"]
+	db := scheduler.GetPDB()
+	remove := &scheduler.PsqlBucketObjectRemove{
+		BucketName: bucket,
+		ObjectName: object,
+	}
+	if err := db.Where(remove).Delete(&scheduler.PsqlBucketObjectRemove{}).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(Response{Status: SuccessResponseStatus})
+	w.Write(b)
+}
+
 func (web *webAPIHandlers) verify(w http.ResponseWriter, r *http.Request) (claims *jwt.MapClaims, permissionAllow func(bucket, object string) bool, err error) {
 	claims, owner, authErr := webRequestAuthenticate(r)
 	if authErr != nil {
@@ -9708,7 +9734,7 @@ func (web *webAPIHandlers) BackupPlanDelete(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := db.Delete(plan).Error; err != nil {
+	if err := db.Delete(&plan).Error; err != nil {
 		logs.GetLogger().Error(err)
 		writeWebErrorResponse(w, err)
 		return

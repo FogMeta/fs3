@@ -141,6 +141,8 @@ func registerWebRouter(router *mux.Router) error {
 	// archives
 	webBrowserRouter.Methods(http.MethodGet).Path("/archives").HandlerFunc(httpTraceHdrs(web.ListArchiveBuckets))
 	webBrowserRouter.Methods(http.MethodGet).Path("/archives/{bucket}").HandlerFunc(httpTraceHdrs(web.ListArchiveObjects))
+	webBrowserRouter.Methods(http.MethodDelete).Path("/archives/{bucket}").HandlerFunc(httpTraceHdrs(web.RemoveArchiveObject))
+	webBrowserRouter.Methods(http.MethodDelete).Path("/archives/{bucket}/{object:.+}").HandlerFunc(httpTraceHdrs(web.RemoveArchiveObject))
 
 	// These methods use short-expiry tokens in the URLs. These tokens may unintentionally
 	// be logged, so a new one must be generated for each request.

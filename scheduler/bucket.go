@@ -549,6 +549,7 @@ type PsqlBucketObjectRemove struct {
 	Status        int
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	DeletedAt     gorm.DeletedAt
 }
 
 type PsqlBucketObjectRebuild struct {
