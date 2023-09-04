@@ -189,6 +189,9 @@ func syncRebuildInfo(rebuild *PsqlBucketObjectRebuild) (err error) {
 		}
 		logs.GetLogger().Info("rebuild path: ", path, ", name: ", info.Name(), ", object: ", object, ", size: ", info.Size())
 		_, err = client.PutObject(ctx, bucket, object, file, info.Size(), minio.PutObjectOptions{})
+		if err != nil {
+			logs.GetLogger().Errorf("put object %s failed: %v", object, err)
+		}
 		return err
 	})
 	return err
