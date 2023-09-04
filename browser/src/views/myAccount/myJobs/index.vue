@@ -293,7 +293,7 @@ export default {
           'Authorization': "Bearer " + _this.$store.getters.accessToken
         }      }).then((response) => {
         let json = response.data
-        if (json.status == 'success') _this.confirmDetail(_this.backupPlan.id)
+        if (json.status == 'success') _this.confirmDetail(json.data.id)
         else {
           _this.$message.error(json.message)
           _this.loading = false
