@@ -28,7 +28,7 @@
             {{scope.row.bucket || '-'}}
           </template>
         </el-table-column>
-        <el-table-column prop="object_name" label="File name" width="160">
+        <el-table-column prop="object_name" label="Object Name" width="160">
           <template slot-scope="scope">
             {{scope.row.object_name || '-'}}
           </template>
@@ -106,6 +106,16 @@
       <el-table :data="tableData_2" v-loading="loading_rebuild" stripe empty-text="No data" v-else>
         <el-table-column prop="id" label="Rebuild ID" width="100"></el-table-column>
         <el-table-column prop="plan_name" label="Backup Plan Name" width="180"></el-table-column>
+        <el-table-column prop="bucket" label="Bucket" width="120">
+          <template slot-scope="scope">
+            {{scope.row.bucket || '-'}}
+          </template>
+        </el-table-column>
+        <el-table-column prop="object_name" label="Object Name" width="160">
+          <template slot-scope="scope">
+            {{scope.row.object_name || '-'}}
+          </template>
+        </el-table-column>
         <el-table-column prop="backup_id" label="Backup ID" width="120"></el-table-column>
         <el-table-column prop="data_cid" label="Data CID" min-width="160"></el-table-column>
         <el-table-column prop="created_at" label="Date Created" width="120"></el-table-column>
