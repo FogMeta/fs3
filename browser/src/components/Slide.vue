@@ -57,11 +57,14 @@
 
             </div>
             <div class="fes-search">
-                <div class="introduce">
-                    <p>Archives</p>
+                <div class="introduce" @click="archivesShow = !archivesShow">
+                    <p>Archives
+                        <span class="el-icon-arrow-down" v-if="archivesShow"></span>
+                        <span class="el-icon-arrow-right" v-else></span>
+                    </p>
                 </div>
-                <div class="introRouter ul-list" v-infinite-scroll="load" infinite-scroll-disabled="disabled">
-                    <div class="archive-style" v-for="item in archivesList" :key="item.bucket" @click.stop="archivesShow=false">
+                <div v-if="archivesShow" class="introRouter ul-list" v-infinite-scroll="load" infinite-scroll-disabled="disabled">
+                    <div class="archive-style" v-for="item in archivesList" :key="item.bucket">
                         <router-link :to="{name: 'my_archives', params: {name: item.bucket}}" :class="{'active': activeTree == item.bucket}">{{item.bucket}}
                         </router-link>
                         <el-popconfirm @confirm="archiveDelete(item.bucket)" class="pop" :title="`Are you sure you want to delete '${item.bucket}'?`">
@@ -469,6 +472,7 @@ export default {
                         }
                     })
                 }
+                _this.bucketShow = true
             } else {
                 _this.minioListBucketsAll = JSON.parse(JSON.stringify(_this.minioListBuckets))
             }
