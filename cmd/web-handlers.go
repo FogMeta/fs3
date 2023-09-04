@@ -9186,6 +9186,7 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 		// insert record
 		rebuild.UserAccessKey = claims.AccessKey
 		rebuild.BucketName = backup.BucketName
+		rebuild.ObjectName = backup.ObjectName
 		rebuild.Status = data.Status
 		rebuild.MsID = backup.MsID
 		rebuild.PlanID = backup.PlanID
