@@ -9195,6 +9195,7 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 		rebuild.PayloadCID = backup.PayloadCID
 		rebuild.PayloadURL = payloadURL
 		rebuild.Providers = strings.Join(data.Providers, ",")
+		rebuild.IsDir = backup.IsDir
 
 		if err = db.Create(rebuild).Error; err != nil {
 			logs.GetLogger().Error(err)

@@ -139,7 +139,7 @@ func syncRebuildInfo(rebuild *PsqlBucketObjectRebuild) (err error) {
 		return err
 	}
 	bucket := rebuild.BucketName
-	if !exists {
+	if !exists || rebuild.ObjectName == "" {
 		logs.GetLogger().Infof("bucket %s not exists, make it", bucket)
 		// create bucket
 		bucket = rebuild.BucketName + "-" + time.Now().Format("20060102150405")
@@ -150,11 +150,22 @@ func syncRebuildInfo(rebuild *PsqlBucketObjectRebuild) (err error) {
 	}
 
 	// restore file
+	updateRebuildStatus(rebuild, StatusRebuildRestoring)
+	status = StatusRebuildRestored
+	defer func() {
+		if err != nil {
+			status = StatusRebuildRestoreFailed
+		}
+	}()
 	targetDir := targetPath
 	if !rebuild.IsDir {
-		targetDir = filepath.Dir(targetPath)
+		return restoreSingleFile(ctx, *client, bucket, targetPath)
 	}
-	updateRebuildStatus(rebuild, StatusRebuildRestoring)
+	targetDir = filepath.Dir(targetPath)
+	dirName := filepath.Base(targetDir)
+	if exists && rebuild.ObjectName != "" {
+		dirName += "-" + time.Now().Format("20060102150405")
+	}
 	err = filepath.WalkDir(targetPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -173,14 +184,32 @@ func syncRebuildInfo(rebuild *PsqlBucketObjectRebuild) (err error) {
 		}
 		defer file.Close()
 		object := strings.TrimPrefix(path, targetDir+"/")
-		logs.GetLogger().Info("path: ", path, ", name: ", info.Name(), ", object: ", object, ", size: ", info.Size())
+		if rebuild.ObjectName != "" {
+			object = filepath.Join(dirName, object)
+		}
+		logs.GetLogger().Info("rebuild path: ", path, ", name: ", info.Name(), ", object: ", object, ", size: ", info.Size())
 		_, err = client.PutObject(ctx, bucket, object, file, info.Size(), minio.PutObjectOptions{})
 		return err
 	})
-	status = StatusRebuildRestored
+	return err
+}
+
+func restoreSingleFile(ctx context.Context, client minio.Client, bucket, path string) (err error) {
+	name := filepath.Base(path)
+	dir := filepath.Dir(path)
+	ext := filepath.Ext(path)
+	namePrefix := strings.TrimSuffix(name, ext)
+	object := filepath.Join(dir, namePrefix+"-"+time.Now().Format("20060102150405")+ext)
+	fi, err := os.Stat(path)
 	if err != nil {
-		status = StatusRebuildRestoreFailed
+		return
 	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = client.PutObject(ctx, bucket, object, file, fi.Size(), minio.PutObjectOptions{})
 	return err
 }
 
