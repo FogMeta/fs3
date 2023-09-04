@@ -12,10 +12,13 @@
             <div class="fes-search">
                 <el-input placeholder="Search Buckets..." prefix-icon="el-icon-search" v-model="search" @input="searchBucketFun">
                 </el-input>
-                <div class="introduce">
-                    <p>Bucket</p>
+                <div class="introduce" @click="bucketShow = !bucketShow">
+                    <p>Bucket
+                        <span class="el-icon-arrow-down" v-if="bucketShow"></span>
+                        <span class="el-icon-arrow-right" v-else></span>
+                    </p>
                 </div>
-                <el-row>
+                <el-row v-if="bucketShow">
                     <el-col :span="24" v-for="(item, index) in minioListBucketsAll.buckets" :key="index" :class="{'active': item.name == currentBucket && allActive && $route.name === 'fs3'}" @click.native="getListBucket(item.name, true)">
                         <div>
                             <i class="iconfont icon-harddriveyingpan"></i>
@@ -58,8 +61,12 @@
                     <p>Archives</p>
                 </div>
                 <div class="introRouter ul-list" v-infinite-scroll="load" infinite-scroll-disabled="disabled">
-                    <div v-for="item in archivesList" :key="item.bucket" @click.stop="archivesShow=false">
-                        <router-link :to="{name: 'my_archives', params: {name: item.bucket}}" :class="{'active': activeTree == item.bucket}">{{item.bucket}}</router-link>
+                    <div class="archive-style" v-for="item in archivesList" :key="item.bucket" @click.stop="archivesShow=false">
+                        <router-link :to="{name: 'my_archives', params: {name: item.bucket}}" :class="{'active': activeTree == item.bucket}">{{item.bucket}}
+                        </router-link>
+                        <el-popconfirm @confirm="archiveDelete(item.bucket)" class="pop" :title="`Are you sure you want to delete '${item.bucket}'?`">
+                            <span class="el-icon-delete" slot="reference"></span>
+                        </el-popconfirm>
                     </div>
                     <p v-if="loading" class="t">Loading...</p>
                     <p v-if="noMore && (archivesList && archivesList.length>10)" class="t">No more</p>
@@ -109,6 +116,7 @@
     </div>
 </template>
 <script>
+let _this
 import axios from 'axios'
 import QS from 'qs'
 export default {
@@ -177,7 +185,8 @@ export default {
                 offset: 1,
                 total: 0,
             },
-            loading: false
+            loading: false,
+            bucketShow: false
         };
     },
     props: ['minioListBuckets', 'currentBucket', 'homeClick'],
@@ -253,7 +262,6 @@ export default {
             }
         },
         productName () {
-            let _this = this
             _this.introduceColor = _this.$route.name == 'backup' ? true : false
             _this.activeTree = ''
             if (_this.$route.name.indexOf('my_account') > -1) {
@@ -282,7 +290,6 @@ export default {
             this.$emit('getretrievalHome', true);
         },
         removePolicies (content) {
-            let _this = this
             let dataSetBucketPolicy = {
                 id: 1,
                 jsonrpc: "2.0",
@@ -311,7 +318,6 @@ export default {
             });
         },
         addPolicies () {
-            let _this = this
             let $hgh
             if (_this.bucketPolicies.policies) {
                 _this.bucketPolicies.policies.map(item => {
@@ -335,7 +341,6 @@ export default {
 
         },
         setPolicyChange () {
-            let _this = this
             let dataSetBucketPolicy = {
                 id: 1,
                 jsonrpc: "2.0",
@@ -364,7 +369,6 @@ export default {
             });
         },
         dialogFun (name, index) {
-            let _this = this
             _this.titlePolicy = 'Bucket Policy (' + name + ')'
             _this.dialogFormVisible = true
             if (_this.minioListBucketsAll) {
@@ -376,7 +380,6 @@ export default {
             _this.getListAllBucketPolicies(name)
         },
         dialogDeleteFun (name, index) {
-            let _this = this
             let dataDeleteBucket = {
                 id: 1,
                 jsonrpc: "2.0",
@@ -403,7 +406,6 @@ export default {
             });
         },
         getListAllBucketPolicies (name) {
-            let _this = this
             let dataListAllBucketPolicies = {
                 id: 1,
                 jsonrpc: "2.0",
@@ -432,7 +434,6 @@ export default {
             //console.log(key, keyPath);
         },
         mobileMenuFun () {
-            let _this = this;
             _this.mobileMenuShow = !_this.mobileMenuShow;
             if (_this.mobileMenuShow) {
                 document.body.style.height = '100vh'
@@ -443,7 +444,6 @@ export default {
             }
         },
         caozuoFun (index, name) {
-            let _this = this;
             _this.$nextTick(() => {
                 if (_this.minioListBucketsAll.buckets) {
                     _this.minioListBucketsAll.buckets.map((item, i) => {
@@ -460,7 +460,6 @@ export default {
             }
         },
         searchBucketFun () {
-            let _this = this
             if (_this.search) {
                 _this.minioListBucketsAll.buckets = []
                 if (_this.minioListBuckets.buckets) {
@@ -479,7 +478,6 @@ export default {
             this.allActive = allDeal ? true : false
         },
         getMinioData () {
-            let _this = this;
             if (_this.minioListBuckets && _this.minioListBuckets.buckets) {
                 _this.minioListBuckets.buckets.map(item => {
                     item.show = false;
@@ -491,7 +489,6 @@ export default {
             }
         },
         archivesData () {
-            let _this = this
             let postUrl = _this.data_api + `/minio/archives`
             if (_this.parmaRebuild.offset === 1) _this.archivesList = []
             let offsetRebuild = _this.parmaRebuild.offset > 0 ? _this.parmaRebuild.offset - 1 : 0;
@@ -517,13 +514,33 @@ export default {
             this.loading = true
             this.archivesData()
             this.parmaRebuild.offset += 1
+        },
+        archiveDelete (name) {
+            let jsonObject = {
+                "bucket": name
+            }
+            axios.delete(`${_this.data_api}/minio/archives/${name}`, {
+                data: jsonObject,
+                headers: {
+                    'Authorization': "Bearer " + _this.$store.getters.accessToken
+                }
+            }).then((response) => {
+                let json = response.data
+                if (json.status == 'success') {
+                    _this.parmaRebuild.offset = 1
+                    _this.load()
+                } else if (json.message) _this.$message.error(json.message);
+            }).catch(function (error) {
+                console.log(error)
+            });
         }
     },
     mounted () {
-        this.archivesList = []
-        this.getMinioData()
-        this.productName()
-        this.load()
+        _this = this
+        _this.archivesList = []
+        _this.getMinioData()
+        _this.productName()
+        _this.load()
         // this.archivesData()
     },
 };
@@ -605,7 +622,13 @@ export default {
         }
       }
       p {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         color: #fff;
+        span {
+          padding: 0 0.2rem 0 0.1rem;
+        }
       }
     }
     .introRouter {
@@ -617,6 +640,40 @@ export default {
         max-height: 250px;
         margin: 0 0 0.2rem;
         overflow-y: auto;
+        a,
+        .archive-style {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .archive-style {
+          color: rgba(255, 255, 255, 0.85);
+          font-size: inherit;
+          //   .pop /deep/ {
+          //     display: none;
+          //   }
+          span {
+            cursor: pointer;
+          }
+          .el-icon-delete {
+            padding: 0 0.2rem 0 0.1rem;
+            &:hover {
+              color: #7ecef4;
+            }
+          }
+          a {
+            &:hover {
+              color: #7ecef4;
+              background-color: transparent;
+              text-decoration: underline;
+            }
+          }
+          &:hover {
+            .pop /deep/ {
+              display: block;
+            }
+          }
+        }
       }
       a {
         display: block;
