@@ -9117,6 +9117,8 @@ type RebuildInfo struct {
 	BackupID    uint     `json:"backup_id"`
 	PlanID      uint     `json:"plan_id"`
 	PlanName    string   `json:"plan_name"`
+	Bucket      string   `json:"bucket"`
+	ObjectName  string   `json:"object_name"`
 	Providers   []string `json:"providers"`
 	DataCID     string   `json:"data_cid"`
 	Status      int      `json:"status"`
@@ -9219,14 +9221,16 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 	}
 	w.WriteHeader(http.StatusOK)
 	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: RebuildInfo{
-		ID:        rebuild.ID,
-		BackupID:  rebuild.BackupID,
-		PlanID:    rebuild.PlanID,
-		PlanName:  rebuild.PlanName,
-		Status:    rebuild.Status,
-		StatusMsg: scheduler.RebuildStatusMsg(rebuild),
-		CreatedAt: rebuild.CreatedAt.Unix(),
-		UpdatedAt: rebuild.UpdatedAt.Unix(),
+		ID:         rebuild.ID,
+		BackupID:   rebuild.BackupID,
+		PlanID:     rebuild.PlanID,
+		PlanName:   rebuild.PlanName,
+		Bucket:     rebuild.BucketName,
+		ObjectName: rebuild.ObjectName,
+		Status:     rebuild.Status,
+		StatusMsg:  scheduler.RebuildStatusMsg(rebuild),
+		CreatedAt:  rebuild.CreatedAt.Unix(),
+		UpdatedAt:  rebuild.UpdatedAt.Unix(),
 	}})
 	w.Write(b)
 }
@@ -9290,6 +9294,8 @@ func (web *webAPIHandlers) RebuildObjectInfo(w http.ResponseWriter, r *http.Requ
 		BackupID:    rebuild.BackupID,
 		PlanID:      rebuild.PlanID,
 		PlanName:    rebuild.PlanName,
+		Bucket:      rebuild.BucketName,
+		ObjectName:  rebuild.ObjectName,
 		Providers:   data.Providers,
 		DataCID:     data.PayloadCID,
 		Status:      data.Status,
@@ -9352,6 +9358,8 @@ func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Requ
 			BackupID:    rebuild.BackupID,
 			PlanID:      rebuild.PlanID,
 			PlanName:    rebuild.PlanName,
+			Bucket:      rebuild.BucketName,
+			ObjectName:  rebuild.ObjectName,
 			Providers:   providers,
 			DataCID:     rebuild.PayloadCID,
 			Status:      rebuild.Status,
@@ -9460,6 +9468,7 @@ func (web *webAPIHandlers) ListArchiveObjects(w http.ResponseWriter, r *http.Req
 			list = append(list, &ArchiveRemoveObject{
 				ID:         obj.ID,
 				Bucket:     bucket,
+				ObjectName: obj.ObjectName,
 				FileName:   obj.ObjectName,
 				RemovedAt:  obj.CreatedAt.Unix(),
 				DataCID:    obj.PayloadCID,
@@ -9493,6 +9502,7 @@ type ArchiveRemoveObject struct {
 	ID         uint   `json:"id"`
 	Bucket     string `json:"bucket"`
 	FileName   string `json:"file_name"`
+	ObjectName string `json:"object_name"`
 	DataCID    string `json:"data_cid"`
 	DueAt      int64  `json:"due_at"`
 	RemovedAt  int64  `json:"removed_at"`
