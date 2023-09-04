@@ -157,12 +157,10 @@ func syncRebuildInfo(rebuild *PsqlBucketObjectRebuild) (err error) {
 			status = StatusRebuildRestoreFailed
 		}
 	}()
-	targetDir := targetPath
 	if !rebuild.IsDir {
-		return restoreSingleFile(ctx, *client, bucket, targetPath)
+		return restoreSingleFile(ctx, *client, bucket, targetPath, rebuild.ObjectName)
 	}
-	targetDir = filepath.Dir(targetPath)
-	dirName := filepath.Base(targetDir)
+	dirName := rebuild.ObjectName
 	if exists && rebuild.ObjectName != "" {
 		dirName += "-" + time.Now().Format("20060102150405")
 	}
@@ -184,7 +182,7 @@ func syncRebuildInfo(rebuild *PsqlBucketObjectRebuild) (err error) {
 			return err
 		}
 		defer file.Close()
-		object := strings.TrimPrefix(path, targetDir+"/")
+		object := strings.TrimPrefix(path, targetPath+"/")
 		if rebuild.ObjectName != "" {
 			object = filepath.Join(dirName, object)
 		}
@@ -198,12 +196,19 @@ func syncRebuildInfo(rebuild *PsqlBucketObjectRebuild) (err error) {
 	return err
 }
 
-func restoreSingleFile(ctx context.Context, client minio.Client, bucket, path string) (err error) {
-	name := filepath.Base(path)
-	dir := filepath.Dir(path)
-	ext := filepath.Ext(path)
+func restoreSingleFile(ctx context.Context, client minio.Client, bucket, path, object string) (err error) {
+	if object == "" {
+		return errors.New("invalid empty object")
+	}
+	name := filepath.Base(object)
+	dir := filepath.Dir(object)
+	ext := filepath.Ext(object)
 	namePrefix := strings.TrimSuffix(name, ext)
-	object := filepath.Join(dir, namePrefix+"-"+time.Now().Format("20060102150405")+ext)
+	suffix := "-" + time.Now().Format("20060102150405") + ext
+	object = namePrefix + suffix
+	if dir != "." {
+		object = filepath.Join(dir, object)
+	}
 	fi, err := os.Stat(path)
 	if err != nil {
 		return
