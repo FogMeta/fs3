@@ -232,7 +232,7 @@ func BackupStatusParse(status int) int {
 }
 
 func RebuildStatusParse(status int) int {
-	if status == 153 || status == 1 {
+	if status == StatusRebuildRestored || status == 1 {
 		return 1
 	}
 	if status > 0 && status%10 == 0 {
