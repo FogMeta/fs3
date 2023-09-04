@@ -10,7 +10,7 @@
     <div class="fs3_cont">
       <el-table :data="tableData" v-loading="loading" stripe empty-text="No data">
         <el-table-column prop="bucket" label="Bucket Name" width="180"></el-table-column>
-        <el-table-column prop="file_name" label="File Name" width="120">
+        <el-table-column prop="file_name" label="Object Name" width="120">
           <template slot-scope="scope">
             {{ scope.row.file_name || '-' }}
           </template>

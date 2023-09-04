@@ -46,9 +46,11 @@
                   <el-progress :color="list.status === -1?'#f56c6c':'#4d75ff'" :percentage="list.progress"></el-progress>
                 </div>
               </div>
-              <button type="button" class="btn btn-default pcIcon" slot="reference">
-                <i class="el-icon-refresh"></i>
-              </button>
+              <el-tooltip class="item" slot="reference" effect="dark" content="Importing" placement="bottom">
+                <button type="button" class="btn btn-default pcIcon">
+                  <i class="el-icon-refresh"></i>
+                </button>
+              </el-tooltip>
             </el-popover>
           </div>
         </li>
@@ -156,12 +158,10 @@
               </el-table-column>
               <el-table-column prop="providers" label="Storage Providers">
                 <template slot-scope="scope">
-                  <div class="hot-cold-box flex">
-                    <p class="flex" v-for="(miner, mIndex) in exChangeList[scope.$index].providers" :key="mIndex">
-                      {{miner}}
-                      <span v-if="mIndex<exChangeList[scope.$index].providers.length-1" class="span">, </span>
-                    </p>
-                  </div>
+                  <el-select v-model="scope.row.providersValue" placeholder="">
+                    <el-option v-for="item in scope.row.providers" :key="item" :label="item" :value="item">
+                    </el-option>
+                  </el-select>
                 </template>
               </el-table-column>
               <el-table-column prop="status_msg" label="Status"></el-table-column>
@@ -601,15 +601,13 @@ export default {
         let json = response.data
         if (json.status == 'success') {
           _this.parmaTable.total = json.data.total
-          let dataAll = json.data.list || []
-          if (dataAll && dataAll.length > 0) {
-            dataAll.map(item => {
-              item.visible = false
-              item.visibleDataCid = false
-              item.created_at = item.created_at ? Moment(new Date(item.created_at * 1000)).format('YYYY-MM-DD HH:mm:ss') : '-'
-            })
-          }
-          _this.exChangeList = dataAll
+          json.data.list.map(item => {
+            item.providersValue = item.providers && item.providers.length > 0 ? item.providers[0] : ''
+            item.visible = false
+            item.visibleDataCid = false
+            item.created_at = item.created_at ? Moment(new Date(item.created_at * 1000)).format('YYYY-MM-DD HH:mm:ss') : '-'
+          })
+          _this.exChangeList = json.data.list || []
         } else _this.$message.error(json.message)
         _this.exChangeLoad = false
       }).catch(function (error) {
