@@ -168,11 +168,12 @@ func syncRebuildInfo(rebuild *PsqlBucketObjectRebuild) (err error) {
 	}
 	err = filepath.WalkDir(targetPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
+			logs.GetLogger().Error(err)
 			return err
 		}
 		if d.IsDir() {
-			// return nil
 			logs.GetLogger().Infof("path: %s is dir\n", path)
+			return nil
 		}
 		info, err := d.Info()
 		if err != nil {
