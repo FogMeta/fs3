@@ -162,7 +162,7 @@
     <el-dialog title="Rebuild Image" custom-class="formStyle" :visible.sync="dialogVisible" :width="dialogWidth">
       <img src="@/assets/images/small_bell.png" class="icon" alt="">
       <span class="span">Are you sure you want to rebuild volume from
-        <b>{{backupPlan.plan_name}}</b> ?</span>
+        <b>{{backupPlan.plan_name || 'the backup'}}</b> ?</span>
       <span class="span">This action will overwrite your existing file system,</span>
       <span class="span">
         <b>Proceed?</b>

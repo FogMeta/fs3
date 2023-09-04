@@ -18,7 +18,21 @@
             {{ scope.row.id }}
           </template>
         </el-table-column>
-        <el-table-column prop="plan_name" label="Backup Plan Name" width="180"></el-table-column>
+        <el-table-column prop="plan_name" label="Backup Plan Name" width="180">
+          <template slot-scope="scope">
+            {{scope.row.plan_name || '-'}}
+          </template>
+        </el-table-column>
+        <el-table-column prop="bucket" label="Bucket" width="120">
+          <template slot-scope="scope">
+            {{scope.row.bucket || '-'}}
+          </template>
+        </el-table-column>
+        <el-table-column prop="object_name" label="Object Name" width="160">
+          <template slot-scope="scope">
+            {{scope.row.object_name || '-'}}
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="Date Created" width="120">
           <template slot-scope="scope">
             {{ scope.row.created_at || '-' }}
@@ -77,9 +91,13 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="" label="Action" min-width="130">
+        <el-table-column prop="" label="Action" min-width="140">
           <template slot-scope="scope">
-            <el-button v-if="scope.row.status_msg.toLowerCase() != 'completed'" type="info" @click="dialogDis=true">Rebuild</el-button>
+            <div v-if="scope.row.status_msg.toLowerCase() == 'failed'">
+              <el-button type="primary" @click="actionFun(scope.row)">Retry</el-button>
+              <el-button type="danger" @click="actionFun(scope.row, 1)">Delete</el-button>
+            </div>
+            <el-button v-else-if="scope.row.status_msg.toLowerCase() != 'completed'" type="info" disabled>Rebuild</el-button>
             <el-button v-else type="primary" @click="detailFun(scope.row)">Rebuild</el-button>
           </template>
         </el-table-column>
@@ -88,6 +106,16 @@
       <el-table :data="tableData_2" v-loading="loading_rebuild" stripe empty-text="No data" v-else>
         <el-table-column prop="id" label="Rebuild ID" width="100"></el-table-column>
         <el-table-column prop="plan_name" label="Backup Plan Name" width="180"></el-table-column>
+        <el-table-column prop="bucket" label="Bucket" width="120">
+          <template slot-scope="scope">
+            {{scope.row.bucket || '-'}}
+          </template>
+        </el-table-column>
+        <el-table-column prop="object_name" label="Object Name" width="160">
+          <template slot-scope="scope">
+            {{scope.row.object_name || '-'}}
+          </template>
+        </el-table-column>
         <el-table-column prop="backup_id" label="Backup ID" width="120"></el-table-column>
         <el-table-column prop="data_cid" label="Data CID" min-width="160"></el-table-column>
         <el-table-column prop="created_at" label="Date Created" width="120"></el-table-column>
@@ -134,7 +162,7 @@
     <el-dialog title="Rebuild Image" custom-class="formStyle" :visible.sync="dialogVisible" :width="dialogWidth">
       <img src="@/assets/images/small_bell.png" class="icon" alt="">
       <span class="span">Are you sure you want to rebuild volume from
-        <b>{{backupPlan.plan_name}}</b> ?</span>
+        <b>{{backupPlan.plan_name || 'the backup'}}</b> ?</span>
       <span class="span">This action will overwrite your existing file system,</span>
       <span class="span">
         <b>Proceed?</b>
@@ -197,6 +225,7 @@
 </template>
 
 <script>
+let _this
 import axios from 'axios'
 import moment from "moment"
 import QS from 'qs'
@@ -252,7 +281,6 @@ export default {
       this.$router.push({ name: 'my_account_backupPlans' })
     },
     confirm () {
-      let _this = this
       _this.dialogVisible = false
       _this.loading = true
       let postUrl = _this.data_api + `/minio/rebuild`
@@ -276,7 +304,6 @@ export default {
       });
     },
     confirmDetail (id) {
-      let _this = this
       _this.loading = true
       let postUrl = _this.data_api + `/minio/rebuild/${id}`
 
@@ -308,13 +335,43 @@ export default {
       this.dialogConfirm = false
     },
     detailFun (row) {
-      let _this = this
       _this.backupPlan.plan_name = row.plan_name
       _this.backupPlan.id = row.id
       _this.dialogVisible = true
     },
+    actionFun (row, type) {
+      _this.loading = true
+      let update
+      let jsonObject = {
+        "backup_id": row.id,
+        "retry": true
+      }
+      if (type) update = axios.delete(`${_this.data_api}/minio/backup/${row.id}`, {
+        data: jsonObject,
+        headers: {
+          'Authorization': "Bearer " + _this.$store.getters.accessToken
+        }
+      })
+      else update = axios.put(`${_this.data_api}/minio/backup/${row.id}`, jsonObject, {
+        headers: {
+          'Authorization': "Bearer " + _this.$store.getters.accessToken
+        }
+      })
+
+      update.then((response) => {
+        let json = response.data
+        if (json.status == 'success') _this.getData(1)
+        else {
+          _this.$message.error(json.message)
+          _this.loading = false
+        }
+      }).catch(function (error) {
+        console.log(error, error.response);
+        if (error.response && error.response.data) _this.$message.error(error.response.data.message)
+        _this.loading = false
+      });
+    },
     productName () {
-      let _this = this
       let paramsType = _this.$route.params.type
       if (paramsType == 'backup_job') {
         _this.linkTitle = 'All Backup Job Details'
@@ -325,7 +382,6 @@ export default {
       }
     },
     copyTextToClipboard (text) {
-      let _this = this
       let saveLang = "Success";
       var txtArea = document.createElement("textarea");
       txtArea.id = 'txt';
@@ -367,7 +423,6 @@ export default {
       this.getData();
     },
     getData (type) {
-      let _this = this
       _this.loading = true
       let postUrl = ''
 
@@ -403,17 +458,8 @@ export default {
                   '-'
             })
             _this.tableData = json.data.list || []
-
-            setTimeout(function () {
-              _this.sort(_this.tableData)
-              _this.loading = false
-            }, 500)
-          } else {
-            _this.loading = false
-            _this.$message.error(json.message);
-            return false
-          }
-
+          } else if (json.message) _this.$message.error(json.message)
+          _this.loading = false
         }).catch(function (error) {
           console.log(error);
           _this.loading = false
@@ -436,20 +482,11 @@ export default {
             _this.tableData_2 = json.data.list || []
             _this.tableData_2.map(item => {
               item.visible = false
-              item.created_at = moment(new Date(parseInt(item.created_at))).format("YYYY-MM-DD HH:mm:ss")
-              item.updated_at = moment(new Date(parseInt(item.updated_at))).format("YYYY-MM-DD HH:mm:ss")
+              item.created_at = moment(new Date(parseInt(item.created_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
+              item.updated_at = moment(new Date(parseInt(item.updated_at * 1000))).format("YYYY-MM-DD HH:mm:ss")
             })
-
-            setTimeout(function () {
-              _this.sort(_this.tableData_2)
-              _this.loading_rebuild = false
-            }, 500)
-          } else {
-            _this.loading_rebuild = false
-            if (json.message) _this.$message.error(json.message);
-            return false
-          }
-
+          } else if (json.message) _this.$message.error(json.message)
+          _this.loading_rebuild = false
         }).catch(function (error) {
           console.log(error);
           _this.loading_rebuild = false
@@ -463,7 +500,8 @@ export default {
     }
   },
   mounted () {
-    this.productName()
+    _this = this
+    _this.productName()
   },
   filters: {
     NumFormatPrice (value) {
