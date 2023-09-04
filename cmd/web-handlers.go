@@ -8729,6 +8729,72 @@ type S3ImportReq struct {
 	TargetBucket    string `json:"target_bucket"`
 }
 
+func (web *webAPIHandlers) BackupRetry(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "BackupRetry")
+	claims, _, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		writeWebErrorResponse(w, errors.New("invalid id"))
+		return
+	}
+	db := scheduler.GetPDB()
+	var backup scheduler.PsqlBucketObjectBackup
+	if err = db.First(&backup, id).Error; err != nil {
+		writeWebErrorResponse(w, err)
+		return
+	}
+	if backup.UserAccessKey != claims.AccessKey {
+		writeWebErrorResponse(w, errors.New("no permission to operate"))
+		return
+	}
+	if err = db.Model(backup).Update("status", 0).Error; err != nil {
+		writeWebErrorResponse(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(SendResponse{Status: SuccessResponseStatus})
+	w.Write(b)
+}
+
+func (web *webAPIHandlers) BackupDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "BackupDelete")
+	claims, _, err := web.verify(w, r)
+	if err != nil {
+		return
+	}
+	defer logger.AuditLog(ctx, w, r, claims.Map())
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		writeWebErrorResponse(w, errors.New("invalid id"))
+		return
+	}
+	db := scheduler.GetPDB()
+	var backup scheduler.PsqlBucketObjectBackup
+	if err = db.First(&backup, id).Error; err != nil {
+		writeWebErrorResponse(w, err)
+		return
+	}
+	if backup.UserAccessKey != claims.AccessKey {
+		writeWebErrorResponse(w, errors.New("no permission to operate"))
+		return
+	}
+	if err = db.Delete(&backup).Error; err != nil {
+		writeWebErrorResponse(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(SendResponse{Status: SuccessResponseStatus})
+	w.Write(b)
+}
+
 // Backup makes backups for objects
 func (web *webAPIHandlers) Backup(w http.ResponseWriter, r *http.Request) {
 	ctx := newContext(r, w, "Backup")
