@@ -27,15 +27,22 @@ func NewMetaClient(key, token, server string) *metaClient {
 	}
 }
 
-func (m *metaClient) Rebuild(id int64, object string) (data *RebuildResp, err error) {
+func (m *metaClient) Rebuild(id int64, object string) (data *RebuildData, err error) {
 	var req struct {
 		DatasetID int64  `json:"dataset_id"`
 		Object    string `json:"object"`
 	}
 	req.DatasetID = id
 	req.Object = object
-	data = &RebuildResp{}
-	err = m.postReq("meta.DatasetRebuild", []interface{}{req}, data)
+	var list []*RebuildData
+	err = m.postReq("meta.DatasetRebuild", []interface{}{req}, &list)
+	if err != nil {
+		return
+	}
+	if len(list) == 0 {
+		return nil, errors.New("records not found")
+	}
+	data = list[0]
 	return data, err
 }
 
@@ -154,7 +161,7 @@ type DealInfo struct {
 	StorageStatus string
 }
 
-type RebuildResp struct {
+type RebuildData struct {
 	Status     int      `json:"status"`
 	PayloadCID string   `json:"payload_cid"`
 	PayloadURL string   `json:"payload_url"`

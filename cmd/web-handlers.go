@@ -9162,10 +9162,16 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if !scheduler.CanRebuild(&backup) {
+		logs.GetLogger().Error("current backup is not allowed to rebuild")
+		writeWebErrorResponse(w, errors.New("backup is not completed, not supoort rebuild"))
+		return
+	}
+
 	client := scheduler.NewMetaClient(env.Get("SWAN_KEY", ""), env.Get("SWAN_TOKEN", ""), env.Get("META_SERVER", ""))
 	data, err := client.Rebuild(backup.MsID, req.Object)
 	if err != nil {
-		logs.GetLogger().Error("backup error:", err)
+		logs.GetLogger().Error("rebuild error:", err)
 		writeWebErrorResponse(w, err)
 		return
 	}
@@ -9179,47 +9185,25 @@ func (web *webAPIHandlers) RebuildObject(w http.ResponseWriter, r *http.Request)
 	}
 
 	rebuild := &scheduler.PsqlBucketObjectRebuild{
-		BackupID:   backup.ID,
-		ObjectName: req.Object,
+		BackupID:      backup.ID,
+		UserAccessKey: claims.AccessKey,
+		BucketName:    backup.BucketName,
+		ObjectName:    backup.ObjectName,
+		Status:        data.Status,
+		MsID:          backup.MsID,
+		PlanID:        backup.PlanID,
+		PlanName:      backup.PlanName,
+		DueAt:         data.DueAt,
+		PayloadCID:    backup.PayloadCID,
+		PayloadURL:    payloadURL,
+		Providers:     strings.Join(data.Providers, ","),
+		IsDir:         backup.IsDir,
 	}
-	if err := db.Where(rebuild).First(rebuild).Error; err != nil {
-		// insert record
-		rebuild.UserAccessKey = claims.AccessKey
-		rebuild.BucketName = backup.BucketName
-		rebuild.ObjectName = backup.ObjectName
-		rebuild.Status = data.Status
-		rebuild.MsID = backup.MsID
-		rebuild.PlanID = backup.PlanID
-		rebuild.PlanName = backup.PlanName
-		rebuild.BackupID = backup.ID
-		rebuild.DueAt = data.DueAt
-		rebuild.PayloadCID = backup.PayloadCID
-		rebuild.PayloadURL = payloadURL
-		rebuild.Providers = strings.Join(data.Providers, ",")
-		rebuild.IsDir = backup.IsDir
 
-		if err = db.Create(rebuild).Error; err != nil {
-			logs.GetLogger().Error(err)
-			writeWebErrorResponse(w, err)
-			return
-		}
-	} else {
-		rebuild.Status = data.Status
-		rebuild.PayloadCID = data.PayloadCID
-		rebuild.PayloadURL = data.PayloadURL
-		rebuild.Providers = strings.Join(data.Providers, ",")
-		err := db.Model(rebuild).Updates(scheduler.PsqlBucketObjectRebuild{
-			Status:     data.Status,
-			PayloadCID: data.PayloadCID,
-			PayloadURL: data.PayloadURL,
-			Providers:  rebuild.Providers,
-			DueAt:      data.DueAt,
-		}).Error
-		if err != nil {
-			logs.GetLogger().Error(err)
-			writeWebErrorResponse(w, err)
-			return
-		}
+	if err = db.Create(rebuild).Error; err != nil {
+		logs.GetLogger().Error(err)
+		writeWebErrorResponse(w, err)
+		return
 	}
 	w.WriteHeader(http.StatusOK)
 	b, _ := json.Marshal(Response{Status: SuccessResponseStatus, Data: RebuildInfo{
@@ -9274,7 +9258,7 @@ func (web *webAPIHandlers) RebuildObjectInfo(w http.ResponseWriter, r *http.Requ
 	client := scheduler.NewMetaClient(env.Get("SWAN_KEY", ""), env.Get("SWAN_TOKEN", ""), env.Get("META_SERVER", ""))
 	data, err := client.Rebuild(rebuild.MsID, rebuild.ObjectName)
 	if err != nil {
-		logs.GetLogger().Error("backup error:", err)
+		logs.GetLogger().Error("rebuild error:", err)
 		writeWebErrorResponse(w, err)
 		return
 	}
