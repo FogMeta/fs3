@@ -169,3 +169,11 @@ type RebuildData struct {
 	DueAt      int64    `json:"due_at"`
 	CreatedAt  int64    `json:"created_at"`
 }
+
+func HandleProvider(providers ...string) []string {
+	list := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		list = append(list, strings.TrimPrefix(provider, "f0"))
+	}
+	return list
+}

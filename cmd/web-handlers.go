@@ -8963,6 +8963,7 @@ func (web *webAPIHandlers) BackupList(w http.ResponseWriter, r *http.Request) {
 		providers := []string{}
 		if backup.Providers != "" {
 			providers = strings.Split(backup.Providers, ",")
+			providers = scheduler.HandleProvider(providers...)
 		}
 		canRebuild := scheduler.CanRebuild(backup)
 		msg := ""
@@ -9338,6 +9339,7 @@ func (web *webAPIHandlers) RebuildObjectList(w http.ResponseWriter, r *http.Requ
 		providers := []string{}
 		if rebuild.Providers != "" {
 			providers = strings.Split(rebuild.Providers, ",")
+			providers = scheduler.HandleProvider(providers...)
 		}
 		list = append(list, &RebuildInfo{
 			ID:          rebuild.ID,
